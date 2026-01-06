@@ -1,0 +1,349 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
+import 'package:finflow/providers/transaction_provider.dart';
+
+class StatsScreen extends StatefulWidget {
+  const StatsScreen({super.key});
+
+  @override
+  State<StatsScreen> createState() => _StatsScreenState();
+}
+
+class _StatsScreenState extends State<StatsScreen> {
+  int _touchedIndex = -1;
+
+  @override
+  Widget build(BuildContext context) {
+    final transactionProvider = Provider.of<TransactionProvider>(context);
+    final expenseData = transactionProvider.expenseData;
+    final totalExpenses = expenseData.values.fold(0.0, (sum, amount) => sum + amount);
+
+    // Prepare data for pie chart
+    final List<PieChartSectionData> pieChartSections = _getPieChartSections(expenseData, context);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                const Text(
+                  'Expense Analytics',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0A2540),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Visual breakdown of your spending',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Total expenses card
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF0A2540), Color(0xFF1A3A5F)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Total Expenses',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white70,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              NumberFormat.currency(symbol: '₹').format(totalExpenses),
+                              style: const TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF00C853).withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: const Icon(
+                            Icons.pie_chart,
+                            size: 32,
+                            color: Color(0xFF00C853),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Pie Chart Card
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Category Distribution',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0A2540),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Tap on a segment to see details',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          height: 300,
+                          child: expenseData.isEmpty
+                              ? const Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.pie_chart_outline,
+                                        size: 64,
+                                        color: Colors.grey,
+                                      ),
+                                      SizedBox(height: 16),
+                                      Text(
+                                        'No expense data available',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        'Add some expenses to see analytics',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : PieChart(
+                                  PieChartData(
+                                    pieTouchData: PieTouchData(
+                                      touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                                        setState(() {
+                                          if (!event.isInterestedForInteractions ||
+                                              pieTouchResponse == null ||
+                                              pieTouchResponse.touchedSection == null) {
+                                            _touchedIndex = -1;
+                                            return;
+                                          }
+                                          _touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                                        });
+                                      },
+                                    ),
+                                    borderData: FlBorderData(show: false),
+                                    sectionsSpace: 2,
+                                    centerSpaceRadius: 60,
+                                    sections: pieChartSections,
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Legend
+                if (expenseData.isNotEmpty) ...[
+                  const Text(
+                    'Category Details',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0A2540),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: expenseData.length,
+                    itemBuilder: (context, index) {
+                      final category = expenseData.keys.elementAt(index);
+                      final amount = expenseData.values.elementAt(index);
+                      final percentage = totalExpenses > 0 ? (amount / totalExpenses) * 100 : 0;
+                      final isTouched = index == _touchedIndex;
+
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        elevation: isTouched ? 4 : 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
+                            color: isTouched ? const Color(0xFF00C853) : Colors.transparent,
+                            width: isTouched ? 2 : 0,
+                          ),
+                        ),
+                        child: ListTile(
+                          leading: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: _getCategoryColor(index).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              _getCategoryIcon(category),
+                              color: _getCategoryColor(index),
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            category,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                              color: isTouched ? const Color(0xFF0A2540) : Colors.black,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${percentage.toStringAsFixed(1)}% of total',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          trailing: Text(
+                            NumberFormat.currency(symbol: '₹').format(amount),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: _getCategoryColor(index),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<PieChartSectionData> _getPieChartSections(Map<String, double> expenseData, BuildContext context) {
+    final List<PieChartSectionData> sections = [];
+    final totalExpenses = expenseData.values.fold(0.0, (sum, amount) => sum + amount);
+
+    expenseData.forEach((category, amount) {
+      final percentage = totalExpenses > 0 ? (amount / totalExpenses) * 100 : 0;
+      final isTouched = expenseData.keys.toList().indexOf(category) == _touchedIndex;
+      final radius = isTouched ? 90.0 : 80.0;
+
+      sections.add(
+        PieChartSectionData(
+          color: _getCategoryColor(expenseData.keys.toList().indexOf(category)),
+          value: amount,
+          title: '${percentage.toStringAsFixed(1)}%',
+          radius: radius,
+          titleStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      );
+    });
+
+    return sections;
+  }
+
+  Color _getCategoryColor(int index) {
+    final List<Color> colors = [
+      const Color(0xFF0A2540), // Navy
+      const Color(0xFF00C853), // Green
+      const Color(0xFF2196F3), // Blue
+      const Color(0xFFFF9800), // Orange
+      const Color(0xFF9C27B0), // Purple
+      const Color(0xFFF44336), // Red
+      const Color(0xFF00BCD4), // Cyan
+      const Color(0xFF8BC34A), // Light Green
+      const Color(0xFFFFC107), // Amber
+      const Color(0xFF795548), // Brown
+    ];
+    return colors[index % colors.length];
+  }
+
+  IconData _getCategoryIcon(String category) {
+    switch (category.toLowerCase()) {
+      case 'food':
+        return Icons.fastfood;
+      case 'travel':
+        return Icons.directions_bus;
+      case 'bills':
+        return Icons.receipt;
+      case 'shopping':
+        return Icons.shopping_bag;
+      case 'income':
+        return Icons.attach_money;
+      case 'housing':
+        return Icons.home;
+      case 'transport':
+        return Icons.directions_car;
+      case 'entertainment':
+        return Icons.movie;
+      case 'healthcare':
+        return Icons.medical_services;
+      case 'education':
+        return Icons.school;
+      default:
+        return Icons.category;
+    }
+  }
+}
+
