@@ -1,16 +1,25 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:finflow/utils/utility.dart';
 import 'package:flutter/material.dart';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import '../services/db_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import '../models/transaction.dart';
+import '../utils/utility.dart';
 
 class TransactionProvider with ChangeNotifier {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  StreamSubscription? _transactionsSubscription;
   List<Transaction> _transactions = [];
+  bool _isInitialized = false;
+
+  // Computed values
+  double _totalIncome = 0;
+  double _totalExpense = 0;
+  double _totalBalance = 0;
 
   final Map<int, String> _categoryMap = {
     1: 'Food',
@@ -23,127 +32,143 @@ class TransactionProvider with ChangeNotifier {
   };
 
   // Currency settings
-  String _currencySymbol = '₹'; // Default to INR
-  String _currencyCode = 'INR'; // Default to INR
+  String _currencySymbol = '₹';
+  String _currencyCode = 'INR';
 
   TransactionProvider() {
-    _loadTransactions();
-    // In a real app, you would load currency settings from persistent storage here
-    // For now, we'll use defaults.
+    _initializeTransactions();
+    _injectDummyDataIfNeeded();
+  }
+
+  void _initializeTransactions() {
+    if (_isInitialized) return;
+    _isInitialized = true;
+
+    // Listen to real-time updates from Firestore
+    try {
+      _transactionsSubscription = _firestore
+          .collection('transactions')
+          .orderBy('date', descending: true)
+          .snapshots()
+          .listen(
+            (snapshot) {
+              try {
+                debugPrint('Transactions loaded: ${snapshot.docs.length}');
+                _transactions = snapshot.docs.map((doc) {
+                  final data = doc.data();
+                  // Ensure the document ID is passed to the transaction
+                  data['id'] = doc.id;
+                  return Transaction.fromJson(data);
+                }).toList();
+
+                // Calculate totals from the stream
+                _calculateTotals();
+
+                notifyListeners();
+              } catch (e) {
+                debugPrint('Error processing transactions snapshot: $e');
+              }
+            },
+            onError: (error) {
+              debugPrint('Error listening to transactions stream: $error');
+              // Attempt to reinitialize after a delay if it's a permission error
+              if (error.toString().contains('PERMISSION_DENIED')) {
+                debugPrint(
+                  'Firestore permission denied. Check google-services.json package name.',
+                );
+              }
+            },
+          );
+    } catch (e) {
+      debugPrint('Failed to initialize Firestore stream: $e');
+      _isInitialized = false; // Allow retry
+    }
+  }
+
+  void _calculateTotals() {
+    _totalIncome = _transactions
+        .where((t) => t.isIncome)
+        .fold(0.0, (total, item) => total + item.amount);
+
+    _totalExpense = _transactions
+        .where((t) => !t.isIncome)
+        .fold(0.0, (total, item) => total + item.amount);
+
+    _totalBalance = _totalIncome - _totalExpense;
   }
 
   List<Transaction> get transactions => _transactions;
 
+  // Optimized getters using computed values
+  double get totalIncome => _totalIncome;
+  double get totalExpense => _totalExpense;
+  double get totalBalance => _totalBalance;
+  double get balance =>
+      _totalBalance; // Alias for totalBalance for compatibility
+
   String get currencySymbol => _currencySymbol;
   String get currencyCode => _currencyCode;
 
-  // Method to change currency
   void changeCurrency(String symbol, String code) {
     _currencySymbol = symbol;
     _currencyCode = code;
-    // In a real app, you would save this to persistent storage
     notifyListeners();
-  }
-
-  Future<void> _loadTransactions() async {
-    final dbService = DBService();
-    final transactionsMap = await dbService.getTransactions();
-    _transactions = transactionsMap.map((txMap) => Transaction.fromMap(txMap)).toList();
-
-    // Add dummy transactions if database is empty
-    if (_transactions.isEmpty) {
-      await _addDummyTransactions();
-      // Reload after adding dummy transactions
-      final updatedTransactionsMap = await dbService.getTransactions();
-      _transactions = updatedTransactionsMap.map((txMap) => Transaction.fromMap(txMap)).toList();
-    }
-
-    // Sort transactions by date (newest first)
-    _transactions.sort((a, b) => b.date.compareTo(a.date));
-
-    notifyListeners();
-  }
-
-  Future<void> refreshTransactions() async {
-    await _loadTransactions();
   }
 
   Future<void> addTransaction(Transaction transaction) async {
-    final dbService = DBService();
-    await dbService.insertTransaction(transaction.toMap());
-    await _loadTransactions();
+    try {
+      await _firestore
+          .collection('transactions')
+          .doc(transaction.id)
+          .set(transaction.toJson());
+    } catch (e) {
+      debugPrint('Error adding transaction: $e');
+      rethrow;
+    }
   }
-
-  Transaction? _lastRemovedTransaction;
-  int? _lastRemovedTransactionIndex;
 
   Future<void> updateTransaction(Transaction transaction) async {
-    final dbService = DBService();
-    await dbService.updateTransaction(transaction.toMap());
-    await _loadTransactions();
-  }
-
-  Future<void> deleteTransaction(int id) async {
-    final dbService = DBService();
-    // Optimistically remove from list for snappy UI
-    final index = _transactions.indexWhere((tx) => tx.id == id);
-    if (index != -1) {
-      _lastRemovedTransaction = _transactions.removeAt(index);
-      _lastRemovedTransactionIndex = index;
-      notifyListeners();
-
-      // Now delete from database
-      await dbService.deleteTransaction(id);
-
-      // Refresh from database to ensure consistency
-      await _loadTransactions();
+    try {
+      await _firestore
+          .collection('transactions')
+          .doc(transaction.id)
+          .update(transaction.toJson());
+    } catch (e) {
+      debugPrint('Error updating transaction: $e');
+      rethrow;
     }
   }
 
-  Future<void> undoDelete() async {
-    if (_lastRemovedTransaction != null && _lastRemovedTransactionIndex != null) {
-      final dbService = DBService();
-      // Re-insert into database
-      await dbService.insertTransaction(_lastRemovedTransaction!.toMap());
-      // Re-insert into list locally and refresh from DB to ensure consistency
-      // _transactions.insert(_lastRemovedTransactionIndex!, _lastRemovedTransaction!);
-      await _loadTransactions(); // Reload to get the correct state from DB
-      
-      _lastRemovedTransaction = null;
-      _lastRemovedTransactionIndex = null;
-      notifyListeners();
+  Future<void> deleteTransaction(String id) async {
+    try {
+      await _firestore.collection('transactions').doc(id).delete();
+    } catch (e) {
+      debugPrint('Error deleting transaction: $e');
+      rethrow;
     }
+  }
+
+  Future<void> refreshTransactions() async {
+    notifyListeners();
   }
 
   Future<List<Transaction>> getRecurringTransactions() async {
-    // This should be implemented in DBService if needed
-    return [];
-  }
-
-  double get totalIncome {
-    return _transactions
-        .where((t) => t.type == 'income')
-        .fold(0.0, (sum, item) => sum + item.amount);
-  }
-
-  double get totalExpense {
-    return _transactions
-        .where((t) => t.type == 'expense')
-        .fold(0.0, (sum, item) => sum + item.amount);
-  }
-
-  double get balance {
-    return totalIncome - totalExpense;
+    return _transactions.where((t) => t.isRecurring).toList();
   }
 
   // Pre-calculate expense data for the dashboard
   Map<String, double> get expenseData {
     final Map<String, double> expenseByCategory = {};
     for (var transaction in _transactions) {
-      if (transaction.type == 'expense') {
-        final category = _categoryMap[transaction.categoryId] ?? 'Misc';
+      if (!transaction.isIncome) {
+        final category =
+            _categoryMap[transaction.categoryId] ?? transaction.category;
         final amount = transaction.amount;
-        expenseByCategory.update(category, (value) => value + amount, ifAbsent: () => amount);
+        expenseByCategory.update(
+          category,
+          (value) => value + amount,
+          ifAbsent: () => amount,
+        );
       }
     }
     return expenseByCategory;
@@ -153,10 +178,15 @@ class TransactionProvider with ChangeNotifier {
   Map<String, double> get incomeData {
     final Map<String, double> incomeByCategory = {};
     for (var transaction in _transactions) {
-      if (transaction.type == 'income') {
-        final category = _categoryMap[transaction.categoryId] ?? 'Misc';
+      if (transaction.isIncome) {
+        final category =
+            _categoryMap[transaction.categoryId] ?? transaction.category;
         final amount = transaction.amount;
-        incomeByCategory.update(category, (value) => value + amount, ifAbsent: () => amount);
+        incomeByCategory.update(
+          category,
+          (value) => value + amount,
+          ifAbsent: () => amount,
+        );
       }
     }
     return incomeByCategory;
@@ -168,12 +198,12 @@ class TransactionProvider with ChangeNotifier {
     }).toList();
 
     final income = monthlyTransactions
-        .where((t) => t.type == 'income')
-        .fold(0.0, (sum, item) => sum + item.amount);
+        .where((t) => t.isIncome)
+        .fold(0.0, (total, item) => total + item.amount);
 
     final expense = monthlyTransactions
-        .where((t) => t.type == 'expense')
-        .fold(0.0, (sum, item) => sum + item.amount);
+        .where((t) => !t.isIncome)
+        .fold(0.0, (total, item) => total + item.amount);
 
     return {'income': income, 'expense': expense};
   }
@@ -188,7 +218,7 @@ class TransactionProvider with ChangeNotifier {
         if (transaction.date.day == weekDay.day &&
             transaction.date.month == weekDay.month &&
             transaction.date.year == weekDay.year &&
-            transaction.type == 'expense') {
+            !transaction.isIncome) {
           total += transaction.amount;
         }
       }
@@ -200,35 +230,44 @@ class TransactionProvider with ChangeNotifier {
   Future<void> exportTransactionsCsv(BuildContext context) async {
     try {
       List<List<dynamic>> rows = [];
-      // Add comprehensive CSV headers
       rows.add([
-        'ID', 'Description', 'Amount', 'Currency', 'Date', 'Category ID',
-        'Category Name', 'Type', 'Account ID', 'Notes', 'Is Recurring',
-        'Recurrence Frequency', 'Recurrence End Date', 'Attachment Path'
+        'ID',
+        'Description',
+        'Amount',
+        'Currency',
+        'Date',
+        'Category ID',
+        'Category Name',
+        'Type',
+        'Account ID',
+        'Notes',
+        'Is Recurring',
+        'Recurrence Frequency',
+        'Recurrence End Date',
+        'Attachment Path',
       ]);
 
       for (var transaction in _transactions) {
         rows.add([
-          transaction.id ?? '',
+          transaction.id,
           transaction.description,
           transaction.amount,
           transaction.currencyCode,
           transaction.date.toIso8601String(),
           transaction.categoryId,
-          transaction.categoryName,
+          transaction.category,
           transaction.type,
           transaction.accountId,
           transaction.notes ?? '',
           transaction.isRecurring ? 'Yes' : 'No',
           transaction.recurrenceFrequency ?? '',
           transaction.recurrenceEndDate?.toIso8601String() ?? '',
-          transaction.attachmentPath ?? ''
+          transaction.attachmentPath ?? '',
         ]);
       }
 
       String csv = const ListToCsvConverter().convert(rows);
-      
-      // Use temporary directory to avoid storage permission issues
+
       final tempDir = await getTemporaryDirectory();
       if (!context.mounted) return;
       final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -237,16 +276,16 @@ class TransactionProvider with ChangeNotifier {
       await file.writeAsString(csv);
       if (!context.mounted) return;
 
-      // Share using share_plus - no storage permissions needed
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(path, mimeType: 'text/csv')],
           subject: 'FinFlow Transaction Data',
-          text: 'Financial transaction data exported on ${DateTime.now().toString().split(' ')[0]}',
+          text:
+              'Financial transaction data exported on ${DateTime.now().toString().split(' ')[0]}',
         ),
       );
       if (!context.mounted) return;
-      
+
       showSnackBar(context, 'Transactions exported successfully');
     } catch (e) {
       if (!context.mounted) return;
@@ -268,13 +307,16 @@ class TransactionProvider with ChangeNotifier {
         if (!context.mounted) return;
         final List<dynamic> jsonData = json.decode(content);
 
-        final dbService = DBService();
+        final batch = _firestore.batch();
         for (var item in jsonData) {
           final transaction = Transaction.fromMap(item);
-          await dbService.insertTransaction(transaction.toMap());
+          batch.set(
+            _firestore.collection('transactions').doc(transaction.id),
+            transaction.toJson(),
+          );
         }
 
-        await _loadTransactions();
+        await batch.commit();
         if (!context.mounted) return;
         showSnackBar(context, 'Transactions imported successfully');
       } else {
@@ -286,136 +328,146 @@ class TransactionProvider with ChangeNotifier {
     }
   }
 
-  Future<void> _addDummyTransactions() async {
-    final dbService = DBService();
+  Future<void> _injectDummyDataIfNeeded() async {
+    // Only inject dummy data if there are no transactions
+    if (_transactions.isNotEmpty) return;
+
     final now = DateTime.now();
-    
-    // Create 5 dummy income transactions
-    final List<Transaction> dummyIncomeTransactions = [
+    final dummyTransactions = [
+      // Day 1 (2 days ago) - Mix of income and expenses
       Transaction(
-        description: 'Salary Deposit',
-        categoryName: 'Salary',
+        description: 'Monthly Salary',
         amount: 50000.0,
         currencyCode: 'INR',
-        date: DateTime(now.year, now.month, now.day - 2),
-        categoryId: 6, // Salary
-        type: 'income',
+        date: now.subtract(const Duration(days: 2)),
+        category: 'Salary',
+        categoryId: 6,
+        isIncome: true,
         accountId: 1,
-        notes: 'Monthly salary',
+        notes: 'Monthly salary payment',
       ),
       Transaction(
-        description: 'Freelance Work',
-        categoryName: 'Freelance',
-        amount: 15000.0,
-        currencyCode: 'INR',
-        date: DateTime(now.year, now.month, now.day - 5),
-        categoryId: 7, // Freelance
-        type: 'income',
-        accountId: 1,
-        notes: 'Web development project',
-      ),
-      Transaction(
-        description: 'Stock Dividends',
-        categoryName: 'Investments',
-        amount: 7500.0,
-        currencyCode: 'INR',
-        date: DateTime(now.year, now.month, now.day - 7),
-        categoryId: 8, // Investments
-        type: 'income',
-        accountId: 1,
-        notes: 'Quarterly dividends',
-      ),
-      Transaction(
-        description: 'Consulting Fee',
-        categoryName: 'Freelance',
-        amount: 12000.0,
-        currencyCode: 'INR',
-        date: DateTime(now.year, now.month, now.day - 10),
-        categoryId: 7, // Freelance
-        type: 'income',
-        accountId: 1,
-        notes: 'Business consulting',
-      ),
-      Transaction(
-        description: 'Bonus Payment',
-        categoryName: 'Salary',
-        amount: 10000.0,
-        currencyCode: 'INR',
-        date: DateTime(now.year, now.month, now.day - 12),
-        categoryId: 6, // Salary
-        type: 'income',
-        accountId: 1,
-        notes: 'Performance bonus',
-      ),
-    ];
-
-    // Create 5 dummy expense transactions
-    final List<Transaction> dummyExpenseTransactions = [
-      Transaction(
-        description: 'Grocery Shopping',
-        categoryName: 'Food',
+        description: 'Grocery shopping',
         amount: 2500.0,
         currencyCode: 'INR',
-        date: DateTime(now.year, now.month, now.day - 1),
-        categoryId: 1, // Food
-        type: 'expense',
+        date: now.subtract(const Duration(days: 2)),
+        category: 'Groceries',
+        categoryId: 1,
+        isIncome: false,
         accountId: 1,
         notes: 'Weekly groceries',
       ),
       Transaction(
-        description: 'Uber Ride to Airport',
-        categoryName: 'Travel',
-        amount: 850.0,
-        currencyCode: 'INR',
-        date: DateTime(now.year, now.month, now.day - 3),
-        categoryId: 2, // Travel
-        type: 'expense',
-        accountId: 1,
-        notes: 'Airport ride',
-      ),
-      Transaction(
-        description: 'Electricity Bill',
-        categoryName: 'Bills',
+        description: 'Electricity bill',
         amount: 1800.0,
         currencyCode: 'INR',
-        date: DateTime(now.year, now.month, now.day - 6),
-        categoryId: 3, // Bills
-        type: 'expense',
+        date: now.subtract(const Duration(days: 2)),
+        category: 'Electricity',
+        categoryId: 3,
+        isIncome: false,
         accountId: 1,
-        notes: 'Monthly electricity',
+        notes: 'Monthly electricity bill',
+      ),
+
+      // Day 2 (1 day ago) - More transactions
+      Transaction(
+        description: 'Freelance project payment',
+        amount: 15000.0,
+        currencyCode: 'INR',
+        date: now.subtract(const Duration(days: 1)),
+        category: 'Business',
+        categoryId: 7,
+        isIncome: true,
+        accountId: 1,
+        notes: 'Web development project',
       ),
       Transaction(
-        description: 'Clothing Purchase',
-        categoryName: 'Shopping',
-        amount: 3200.0,
+        description: 'Lunch at restaurant',
+        amount: 450.0,
         currencyCode: 'INR',
-        date: DateTime(now.year, now.month, now.day - 8),
-        categoryId: 4, // Shopping
-        type: 'expense',
+        date: now.subtract(const Duration(days: 1)),
+        category: 'Food',
+        categoryId: 1,
+        isIncome: false,
         accountId: 1,
-        notes: 'New winter clothes',
+        notes: 'Lunch with colleagues',
       ),
       Transaction(
-        description: 'Restaurant Dinner',
-        categoryName: 'Food',
-        amount: 1800.0,
+        description: 'Mobile recharge',
+        amount: 599.0,
         currencyCode: 'INR',
-        date: DateTime(now.year, now.month, now.day - 9),
-        categoryId: 1, // Food
-        type: 'expense',
+        date: now.subtract(const Duration(days: 1)),
+        category: 'Mobile',
+        categoryId: 3,
+        isIncome: false,
         accountId: 1,
-        notes: 'Family dinner',
+        notes: 'Monthly mobile plan',
+      ),
+      Transaction(
+        description: 'Petrol refill',
+        amount: 1200.0,
+        currencyCode: 'INR',
+        date: now.subtract(const Duration(days: 1)),
+        category: 'Petrol',
+        categoryId: 2,
+        isIncome: false,
+        accountId: 1,
+        notes: 'Fuel for car',
+      ),
+
+      // Day 3 (today) - Final transactions
+      Transaction(
+        description: 'Year-end bonus',
+        amount: 25000.0,
+        currencyCode: 'INR',
+        date: now,
+        category: 'Bonus',
+        categoryId: 8,
+        isIncome: true,
+        accountId: 1,
+        notes: 'Annual performance bonus',
+      ),
+      Transaction(
+        description: 'EMI payment',
+        amount: 8500.0,
+        currencyCode: 'INR',
+        date: now,
+        category: 'EMI',
+        categoryId: 3,
+        isIncome: false,
+        accountId: 1,
+        notes: 'Car loan EMI',
+      ),
+      Transaction(
+        description: 'Medical checkup',
+        amount: 1200.0,
+        currencyCode: 'INR',
+        date: now,
+        category: 'Health',
+        categoryId: 4,
+        isIncome: false,
+        accountId: 1,
+        notes: 'Annual health checkup',
       ),
     ];
 
-    // Combine all dummy transactions
-    final List<Transaction> dummyTransactions = [
-      ...dummyIncomeTransactions,
-      ...dummyExpenseTransactions,
-    ];
-
-    for (var transaction in dummyTransactions) {
-      await dbService.insertTransaction(transaction.toMap());
+    try {
+      for (final transaction in dummyTransactions) {
+        await addTransaction(transaction);
+        // Small delay to avoid overwhelming Firestore
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+      debugPrint(
+        'Successfully injected ${dummyTransactions.length} dummy transactions',
+      );
+    } catch (e) {
+      debugPrint('Error injecting dummy data: $e');
     }
+  }
+
+  @override
+  void dispose() {
+    _transactionsSubscription?.cancel();
+    super.dispose();
   }
 }

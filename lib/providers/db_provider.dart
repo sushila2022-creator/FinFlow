@@ -4,8 +4,6 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import '../models/transaction.dart';
 import '../models/category.dart';
-import '../models/account.dart';
-import '../models/budget.dart';
 
 class DBProvider {
   DBProvider._();
@@ -21,22 +19,30 @@ class DBProvider {
   Future<Database> initDB() async {
     Directory documentsDirectory = await getApplicationDocumentsDirectory();
     String path = join(documentsDirectory.path, "FinanceTracker.db");
-    return await openDatabase(path, version: 1, onOpen: (db) {},
-        onCreate: (Database db, int version) async {
-      await db.execute("CREATE TABLE Account ("
+    return await openDatabase(
+      path,
+      version: 1,
+      onOpen: (db) {},
+      onCreate: (Database db, int version) async {
+        await db.execute(
+          "CREATE TABLE Account ("
           "id INTEGER PRIMARY KEY,"
           "name TEXT,"
           "balance REAL,"
           "currencyCode TEXT"
-          ")");
+          ")",
+        );
 
-      await db.execute("CREATE TABLE Category ("
+        await db.execute(
+          "CREATE TABLE Category ("
           "id INTEGER PRIMARY KEY,"
           "name TEXT,"
           "icon TEXT"
-          ")");
+          ")",
+        );
 
-      await db.execute("CREATE TABLE \"Transaction\" ("
+        await db.execute(
+          "CREATE TABLE \"Transaction\" ("
           "id INTEGER PRIMARY KEY,"
           "description TEXT,"
           "amount REAL,"
@@ -47,50 +53,20 @@ class DBProvider {
           "notes TEXT,"
           "FOREIGN KEY (categoryId) REFERENCES Category(id),"
           "FOREIGN KEY (accountId) REFERENCES Account(id)"
-          ")");
+          ")",
+        );
 
-      await db.execute("CREATE TABLE Budget ("
+        await db.execute(
+          "CREATE TABLE Budget ("
           "id INTEGER PRIMARY KEY,"
           "category TEXT,"
           "amount REAL,"
           "startDate INTEGER,"
           "endDate INTEGER"
-          ")");
-    });
-  }
-
-  // Account CRUD
-  Future<int> newAccount(Account newAccount) async {
-    final db = await database;
-    var res = await db.insert("Account", newAccount.toMap());
-    return res;
-  }
-
-  Future<Account?> getAccount(int id) async {
-    final db = await database;
-    var res = await db.query("Account", where: "id = ?", whereArgs: [id]);
-    return res.isNotEmpty ? Account.fromMap(res.first) : null;
-  }
-
-  Future<List<Account>> getAllAccounts() async {
-    final db = await database;
-    var res = await db.query("Account");
-    List<Account> list =
-        res.isNotEmpty ? res.map((c) => Account.fromMap(c)).toList() : [];
-    return list;
-  }
-
-  Future<int> updateAccount(Account newAccount) async {
-    final db = await database;
-    var res = await db.update("Account", newAccount.toMap(),
-        where: "id = ?", whereArgs: [newAccount.id]);
-    return res;
-  }
-
-  Future<int> deleteAccount(int id) async {
-    final db = await database;
-    var res = await db.delete("Account", where: "id = ?", whereArgs: [id]);
-    return res;
+          ")",
+        );
+      },
+    );
   }
 
   // Category CRUD
@@ -109,15 +85,20 @@ class DBProvider {
   Future<List<Category>> getAllCategories() async {
     final db = await database;
     var res = await db.query("Category");
-    List<Category> list =
-        res.isNotEmpty ? res.map((c) => Category.fromMap(c)).toList() : [];
+    List<Category> list = res.isNotEmpty
+        ? res.map((c) => Category.fromMap(c)).toList()
+        : [];
     return list;
   }
 
   Future<int> updateCategory(Category newCategory) async {
     final db = await database;
-    var res = await db.update("Category", newCategory.toMap(),
-        where: "id = ?", whereArgs: [newCategory.id]);
+    var res = await db.update(
+      "Category",
+      newCategory.toMap(),
+      where: "id = ?",
+      whereArgs: [newCategory.id],
+    );
     return res;
   }
 
@@ -136,62 +117,41 @@ class DBProvider {
 
   Future<Transaction?> getTransaction(int id) async {
     final db = await database;
-    var res = await db.query("\"Transaction\"", where: "id = ?", whereArgs: [id]);
+    var res = await db.query(
+      "\"Transaction\"",
+      where: "id = ?",
+      whereArgs: [id],
+    );
     return res.isNotEmpty ? Transaction.fromMap(res.first) : null;
   }
 
   Future<List<Transaction>> getAllTransactions() async {
     final db = await database;
     var res = await db.query("\"Transaction\"");
-    List<Transaction> list =
-        res.isNotEmpty ? res.map((c) => Transaction.fromMap(c)).toList() : [];
+    List<Transaction> list = res.isNotEmpty
+        ? res.map((c) => Transaction.fromMap(c)).toList()
+        : [];
     return list;
   }
 
   Future<int> updateTransaction(Transaction newTransaction) async {
     final db = await database;
-    var res = await db.update("\"Transaction\"", newTransaction.toMap(),
-        where: "id = ?", whereArgs: [newTransaction.id]);
+    var res = await db.update(
+      "\"Transaction\"",
+      newTransaction.toMap(),
+      where: "id = ?",
+      whereArgs: [newTransaction.id],
+    );
     return res;
   }
 
   Future<int> deleteTransaction(int id) async {
     final db = await database;
-    var res = await db.delete("\"Transaction\"", where: "id = ?", whereArgs: [id]);
-    return res;
-  }
-
-  // Budget CRUD
-  Future<int> newBudget(Budget newBudget) async {
-    final db = await database;
-    var res = await db.insert("Budget", newBudget.toMap());
-    return res;
-  }
-
-  Future<Budget?> getBudget(int id) async {
-    final db = await database;
-    var res = await db.query("Budget", where: "id = ?", whereArgs: [id]);
-    return res.isNotEmpty ? Budget.fromMap(res.first) : null;
-  }
-
-  Future<List<Budget>> getAllBudgets() async {
-    final db = await database;
-    var res = await db.query("Budget");
-    List<Budget> list =
-        res.isNotEmpty ? res.map((c) => Budget.fromMap(c)).toList() : [];
-    return list;
-  }
-
-  Future<int> updateBudget(Budget newBudget) async {
-    final db = await database;
-    var res = await db.update("Budget", newBudget.toMap(),
-        where: "id = ?", whereArgs: [newBudget.id]);
-    return res;
-  }
-
-  Future<int> deleteBudget(int id) async {
-    final db = await database;
-    var res = await db.delete("Budget", where: "id = ?", whereArgs: [id]);
+    var res = await db.delete(
+      "\"Transaction\"",
+      where: "id = ?",
+      whereArgs: [id],
+    );
     return res;
   }
 }

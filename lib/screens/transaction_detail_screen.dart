@@ -28,32 +28,33 @@ class TransactionDetailScreen extends StatelessWidget {
             Text(
               transaction.categoryName,
               style: const TextStyle(
-              fontFamily: poppinsFont,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+                fontFamily: poppinsFont,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               DateFormat('MMM dd, yyyy').format(transaction.date),
-              style: TextStyle(fontFamily: poppinsFont, color: Colors.grey[600]),
+              style: TextStyle(
+                fontFamily: poppinsFont,
+                color: Colors.grey[600],
+              ),
             ),
             const SizedBox(height: 16),
             Row(
               children: [
-                Icon(
-                Icons.category,
-                color: primaryColor,
-                size: 30,
-              ),
-              const SizedBox(width: 12),
+                Icon(Icons.category, color: primaryColor, size: 30),
+                const SizedBox(width: 12),
                 Text(
-                  formatIndianCurrency(transaction.amount),
+                  formatIndianCurrency(transaction.amount.abs()),
                   style: TextStyle(
                     fontFamily: poppinsFont,
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
-                    color: transaction.type == 'expense' ? Colors.red : Colors.green,
+                    color: transaction.type == 'expense'
+                        ? Colors.red
+                        : Colors.green,
                   ),
                 ),
               ],

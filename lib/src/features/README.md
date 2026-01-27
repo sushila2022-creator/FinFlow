@@ -1,1 +1,0 @@
-This directory contains the different features of the application, organized in a feature-first approach. Each subdirectory represents a distinct feature (e.g., authentication, dashboard, transactions).

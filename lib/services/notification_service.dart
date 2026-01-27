@@ -8,23 +8,20 @@ class NotificationService {
 
   static const String dailyReminderChannelId = 'daily_reminder_channel';
   static const String dailyReminderChannelName = 'Daily Reminders';
-  static const String dailyReminderChannelDescription = 'Daily finance reminder notifications';
+  static const String dailyReminderChannelDescription =
+      'Daily finance reminder notifications';
   static const int dailyReminderId = 1;
 
   Future<void> init() async {
     tz.initializeTimeZones();
 
     const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('app_icon');
+        AndroidInitializationSettings('@mipmap/ic_launcher');
 
     const InitializationSettings initializationSettings =
-        InitializationSettings(
-      android: initializationSettingsAndroid,
-    );
+        InitializationSettings(android: initializationSettingsAndroid);
 
-    await flutterLocalNotificationsPlugin.initialize(
-      initializationSettings,
-    );
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
     // Create the notification channel for Android
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -36,22 +33,25 @@ class NotificationService {
     );
 
     await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(channel);
   }
 
   Future<void> showNotification(String title, String body) async {
     const AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
-      'your channel id',
-      'your channel name',
-      channelDescription: 'your channel description',
-      importance: Importance.max,
-      priority: Priority.high,
-      ticker: 'ticker',
+          'your channel id',
+          'your channel name',
+          channelDescription: 'your channel description',
+          importance: Importance.max,
+          priority: Priority.high,
+          ticker: 'ticker',
+        );
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
     );
-    const NotificationDetails platformChannelSpecifics =
-        NotificationDetails(android: androidPlatformChannelSpecifics);
     await flutterLocalNotificationsPlugin.show(
       0,
       title,
@@ -79,16 +79,17 @@ class NotificationService {
 
     const AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
-      dailyReminderChannelId,
-      dailyReminderChannelName,
-      channelDescription: dailyReminderChannelDescription,
-      importance: Importance.high,
-      priority: Priority.high,
-      playSound: true,
-    );
+          dailyReminderChannelId,
+          dailyReminderChannelName,
+          channelDescription: dailyReminderChannelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+        );
 
-    const NotificationDetails platformChannelSpecifics =
-        NotificationDetails(android: androidPlatformChannelSpecifics);
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+    );
 
     await flutterLocalNotificationsPlugin.zonedSchedule(
       dailyReminderId,
@@ -97,7 +98,8 @@ class NotificationService {
       scheduledDate,
       platformChannelSpecifics,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      matchDateTimeComponents: DateTimeComponents.time, // Repeat daily at the same time
+      matchDateTimeComponents:
+          DateTimeComponents.time, // Repeat daily at the same time
     );
   }
 

@@ -1,5 +1,0 @@
-- [x] Analyze the current Settings screen layout
-- [x] Identify the Column widget causing the overflow
-- [x] Wrap the Column widget in SingleChildScrollView
-- [x] Test the changes to ensure scrolling works properly
-- [x] Verify the fix resolves the bottom overflow issue

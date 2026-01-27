@@ -1,12 +1,14 @@
 import 'package:finflow/providers/transaction_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
+import 'package:finflow/utils/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:finflow/services/auth/secure_storage_service.dart';
+
 import 'package:finflow/services/auth/local_auth_service.dart';
 import 'package:finflow/screens/manage_categories_screen.dart';
+import 'package:finflow/screens/welcome_screen.dart';
 import 'package:finflow/utils/database_helper.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -17,7 +19,10 @@ import 'dart:io';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:finflow/services/notification_service.dart';
+import 'package:finflow/services/sms_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -29,7 +34,8 @@ class SettingsScreen extends StatefulWidget {
 class SettingsScreenState extends State<SettingsScreen> {
   bool _isAppLockEnabled = false;
   bool _dailyReminderEnabled = false;
-  final SecureStorageService _secureStorageService = SecureStorageService();
+  bool _isSmsScanEnabled = false;
+  final FlutterSecureStorage _secureStorage = FlutterSecureStorage();
   final LocalAuthService _localAuthService = LocalAuthService();
   final NotificationService _notificationService = NotificationService();
   final TextEditingController _pinController = TextEditingController();
@@ -37,7 +43,6 @@ class SettingsScreenState extends State<SettingsScreen> {
   bool _isBackupInProgress = false;
   bool _isRestoreInProgress = false;
 
-  // Define a list of common currencies with their symbols
   final List<Map<String, String>> currencies = [
     {'name': 'US Dollar', 'symbol': '\$'},
     {'name': 'Euro', 'symbol': '€'},
@@ -66,10 +71,12 @@ class SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _loadAppLockState();
     _loadNotificationSettings();
+    _loadSmsScanSettings();
   }
 
   Future<void> _loadAppLockState() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       _isAppLockEnabled = prefs.getBool('app_lock_enabled') ?? false;
     });
@@ -78,30 +85,47 @@ class SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadNotificationSettings() async {
     final prefs = await SharedPreferences.getInstance();
     final enabled = prefs.getBool('daily_reminder_enabled') ?? false;
+    if (!mounted) return;
     setState(() {
       _dailyReminderEnabled = enabled;
     });
 
-    // Schedule or cancel reminder based on saved setting
     if (enabled) {
-      await _notificationService.scheduleDailyReminder(9, 0); // 9 AM
+      await _notificationService.scheduleDailyReminder(9, 0);
     } else {
       await _notificationService.cancelDailyReminder();
     }
   }
 
+  Future<void> _loadSmsScanSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = prefs.getBool('smart_sms_scan_enabled') ?? false;
+    if (!mounted) return;
+    setState(() {
+      _isSmsScanEnabled = enabled;
+    });
 
+    if (enabled) {
+      SmsService().start();
+    } else {
+      SmsService().stop();
+    }
+  }
 
   void _shareApp() {
     SharePlus.instance.share(
       ShareParams(
-        text: 'Check out FinFlow - Your personal finance management app! Download now and take control of your finances. https://play.google.com/store/apps/details?id=com.finflow.app',
+        text:
+            'Check out FinFlow - Your personal finance management app! Download now and take control of your finances. https://play.google.com/store/apps/details?id=com.finflow.app',
         subject: 'FinFlow - Personal Finance Management',
       ),
     );
   }
 
-  void _showCurrencyDialog(BuildContext context, CurrencyProvider currencyProvider) {
+  void _showCurrencyDialog(
+    BuildContext context,
+    CurrencyProvider currencyProvider,
+  ) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -114,11 +138,16 @@ class SettingsScreenState extends State<SettingsScreen> {
               itemCount: currencies.length,
               itemBuilder: (context, index) {
                 final currency = currencies[index];
-                final isSelected = currency['symbol'] == currencyProvider.currentCurrencySymbol;
+                final isSelected =
+                    currency['symbol'] ==
+                    currencyProvider.currentCurrencySymbol;
 
                 return ListTile(
+                  dense: true,
                   title: Text('${currency['name']} (${currency['symbol']})'),
-                  trailing: isSelected ? const Icon(Icons.check, color: Color(0xFF0A2540)) : null,
+                  trailing: isSelected
+                      ? const Icon(Icons.check, color: Color(0xFF0A2540))
+                      : null,
                   onTap: () {
                     currencyProvider.setCurrency(currency['symbol']!);
                     Navigator.of(context).pop();
@@ -140,46 +169,40 @@ class SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _backupDatabase() async {
     if (!mounted) return;
-    
+
     setState(() {
       _isBackupInProgress = true;
     });
 
     try {
-      // Get the database file path
       final dbPath = await getDatabasesPath();
       if (!mounted) return;
       final dbFilePath = path.join(dbPath, 'FinFlow.db');
-      
+
       final dbFile = File(dbFilePath);
       if (!await dbFile.exists()) {
         throw Exception('Database file not found');
       }
       if (!mounted) return;
 
-      // Create a backup filename
       final backupFileName = 'finflow_backup.db';
-
-      // Get temporary directory to store backup
       final tempDir = await getTemporaryDirectory();
       if (!mounted) return;
       final backupPath = path.join(tempDir.path, backupFileName);
 
-      // Copy the database file to backup location
       await dbFile.copy(backupPath);
       if (!mounted) return;
 
-      // Share the backup file using SharePlus
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(backupPath, mimeType: 'application/octet-stream')],
-          subject: 'FinFlow Database Backup',
           text: 'This is your FinFlow database backup.',
+          subject: 'FinFlow Database Backup',
+          files: [XFile(backupPath, mimeType: 'application/octet-stream')],
         ),
       );
 
       if (!mounted) return;
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Backup created successfully!'),
@@ -188,7 +211,7 @@ class SettingsScreenState extends State<SettingsScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Backup failed: ${e.toString()}'),
@@ -205,7 +228,6 @@ class SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _restoreDatabase() async {
-    // Show confirmation dialog
     final shouldRestore = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -231,13 +253,12 @@ class SettingsScreenState extends State<SettingsScreen> {
     if (shouldRestore != true) return;
 
     if (!mounted) return;
-    
+
     setState(() {
       _isRestoreInProgress = true;
     });
 
     try {
-      // Pick the backup file
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['db'],
@@ -250,38 +271,35 @@ class SettingsScreenState extends State<SettingsScreen> {
       }
 
       final selectedFile = File(result.files.single.path!);
-      
-      // Validate that it's a SQLite database file
+
       if (!selectedFile.path.toLowerCase().endsWith('.db')) {
         throw Exception('Please select a valid database file (.db)');
       }
 
-      // Get the current database path
       final dbPath = await getDatabasesPath();
       if (!mounted) return;
       final dbFilePath = path.join(dbPath, 'FinFlow.db');
       final currentDbFile = File(dbFilePath);
 
-      // Close the current database connection
       Database? currentDb = await _databaseHelper.database;
       if (!mounted) return;
       await currentDb.close();
       if (!mounted) return;
-      
-      // Create a backup of current database before replacing
+
       if (await currentDbFile.exists()) {
         final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final emergencyBackupPath = path.join(dbPath, 'FinFlow_emergency_backup_$timestamp.db');
+        final emergencyBackupPath = path.join(
+          dbPath,
+          'FinFlow_emergency_backup_$timestamp.db',
+        );
         await currentDbFile.copy(emergencyBackupPath);
       }
       if (!mounted) return;
 
-      // Copy the selected backup file to replace the current database
       await selectedFile.copy(dbFilePath);
 
       if (!mounted) return;
 
-      // Show success message and restart the app
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Data Restored Successfully. Please restart the app'),
@@ -289,20 +307,15 @@ class SettingsScreenState extends State<SettingsScreen> {
         ),
       );
 
-      // Restart the app after a short delay
       Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) {
-          // Restart the app by navigating to splash screen
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            '/splash',
-            (route) => false,
-          );
-        }
+        if (!mounted) return;
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/splash', (route) => false);
       });
-
     } catch (e) {
       if (!mounted) return;
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Restore failed: ${e.toString()}'),
@@ -320,296 +333,407 @@ class SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
 
     return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Settings', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF0A2540),
+        backgroundColor: const Color(
+          0xFF0D2B45,
+        ), // Deep Navy - consistent across app
+        toolbarHeight: kToolbarHeight + 20, // Professional spacious look
+        title: Text(
+          'Settings',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+            fontSize: 20,
+            letterSpacing: -0.5,
+          ),
+        ),
         elevation: 0,
         centerTitle: false,
         automaticallyImplyLeading: false,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Consumer<CurrencyProvider>(
-                builder: (context, currencyProvider, child) {
-                  final currentCurrency = currencies.firstWhere(
-                    (currency) => currency['symbol'] == currencyProvider.currentCurrencySymbol,
-                    orElse: () => {'name': 'US Dollar', 'symbol': '\$'},
-                  );
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 16),
+            _buildSectionHeader('General', isDarkMode),
+            Consumer<CurrencyProvider>(
+              builder: (context, currencyProvider, child) {
+                final currentCurrency = currencies.firstWhere(
+                  (currency) =>
+                      currency['symbol'] ==
+                      currencyProvider.currentCurrencySymbol,
+                  orElse: () => {'name': 'US Dollar', 'symbol': '\$'},
+                );
 
-                  return ListTile(
-                    leading: const Icon(Icons.currency_rupee),
-                    title: const Text('Currency'),
-                    trailing: Text(
-                      '${currentCurrency['name']} (${currentCurrency['symbol']})',
-                      style: const TextStyle(fontWeight: FontWeight.w500),
+                return _buildSection([
+                  {
+                    'icon': Icons.currency_exchange,
+                    'title': 'Currency',
+                    'subtitle':
+                        '${currentCurrency['name']} (${currentCurrency['symbol']})',
+                    'onTap': () =>
+                        _showCurrencyDialog(context, currencyProvider),
+                  },
+                  {
+                    'icon': context.watch<ThemeProvider>().isDarkMode
+                        ? Icons.dark_mode
+                        : Icons.light_mode,
+                    'title': 'Dark Mode',
+                    'trailing': Switch(
+                      value: context.watch<ThemeProvider>().isDarkMode,
+                      activeThumbColor: const Color(0xFF00C853),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (value) =>
+                          context.read<ThemeProvider>().toggleTheme(),
                     ),
-                    onTap: () => _showCurrencyDialog(context, currencyProvider),
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Appearance',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: const Color(0xFF0A2540)),
-              ),
-              const SizedBox(height: 16),
-              Consumer<ThemeProvider>(
-                builder: (context, themeProvider, child) {
-                  return SwitchListTile(
-                    title: const Text('Dark Mode'),
-                    value: themeProvider.isDarkMode,
-                    secondary: const Icon(Icons.dark_mode),
-                    onChanged: (value) {
-                      themeProvider.toggleTheme();
+                  },
+                  {
+                    'icon': Icons.sms,
+                    'title': 'Smart SMS Scan',
+                    'onTap': () async {
+                      final prefs = await SharedPreferences.getInstance();
+                      final newValue = !_isSmsScanEnabled;
+                      await prefs.setBool('smart_sms_scan_enabled', newValue);
+                      setState(() {
+                        _isSmsScanEnabled = newValue;
+                      });
+
+                      if (newValue) {
+                        SmsService().start();
+                      } else {
+                        SmsService().stop();
+                      }
                     },
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              ListTile(
-                leading: const Icon(Icons.category),
-                title: const Text('Manage Categories'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const ManageCategoriesScreen(),
+                    'trailing': Switch(
+                      value: _isSmsScanEnabled,
+                      activeThumbColor: const Color(0xFF00C853),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (value) async {
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setBool('smart_sms_scan_enabled', value);
+                        setState(() {
+                          _isSmsScanEnabled = value;
+                        });
+
+                        if (value) {
+                          SmsService().start();
+                        } else {
+                          SmsService().stop();
+                        }
+                      },
                     ),
+                  },
+                  {
+                    'icon': Icons.category,
+                    'title': 'Manage Categories',
+                    'onTap': () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ManageCategoriesScreen(),
+                        ),
+                      );
+                    },
+                  },
+                ], isDarkMode);
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildSectionHeader('Data Management', isDarkMode),
+            _buildSection([
+              {
+                'icon': Icons.table_view,
+                'title': 'Export to Excel',
+                'onTap': () {
+                  final transactionProvider = Provider.of<TransactionProvider>(
+                    context,
+                    listen: false,
                   );
-                },
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Data Management',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: const Color(0xFF0A2540)),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.table_view, color: Colors.green),
-                title: const Text('Export to Excel'),
-                trailing: const Icon(Icons.file_upload),
-                onTap: () {
-                  final transactionProvider = Provider.of<TransactionProvider>(context, listen: false);
                   transactionProvider.exportTransactionsCsv(context);
                 },
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete),
-                title: const Text('Reset App Data'),
-                trailing: const Icon(Icons.delete_forever, color: Colors.red),
-                onTap: _deleteAllData,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Backup & Restore',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: const Color(0xFF0A2540)),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.cloud_upload),
-                title: const Text('Backup Database'),
-                subtitle: const Text('Export your complete database'),
-                trailing: _isBackupInProgress
+                'iconColor': const Color(0xFF00C853),
+              },
+              {
+                'icon': Icons.delete_forever,
+                'title': 'Reset App Data',
+                'onTap': _deleteAllData,
+                'iconColor': Colors.red,
+              },
+            ], isDarkMode),
+            const SizedBox(height: 16),
+            _buildSectionHeader('Backup & Restore', isDarkMode),
+            _buildSection([
+              {
+                'icon': Icons.cloud_upload,
+                'title': 'Backup Database',
+                'onTap': _isBackupInProgress ? null : _backupDatabase,
+                'trailing': _isBackupInProgress
                     ? const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.backup),
-                onTap: _isBackupInProgress ? null : _backupDatabase,
-              ),
-              ListTile(
-                leading: const Icon(Icons.restore),
-                title: const Text('Restore Database'),
-                subtitle: const Text('Import a database backup file'),
-                trailing: _isRestoreInProgress
+                    : null,
+              },
+              {
+                'icon': Icons.restore,
+                'title': 'Restore Database',
+                'onTap': _isRestoreInProgress ? null : _restoreDatabase,
+                'trailing': _isRestoreInProgress
                     ? const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.restore),
-                onTap: _isRestoreInProgress ? null : _restoreDatabase,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Security',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: const Color(0xFF0A2540)),
-              ),
-              const SizedBox(height: 16),
-              SwitchListTile(
-                title: const Text('Enable App Lock'),
-                value: _isAppLockEnabled,
-                secondary: const Icon(Icons.lock),
-                onChanged: (value) async {
-                  if (value) {
-                    _showBiometricSetupDialog();
-                  } else {
+                    : null,
+              },
+            ], isDarkMode),
+            const SizedBox(height: 16),
+            _buildSectionHeader('Security', isDarkMode),
+            _buildSection([
+              {
+                'icon': Icons.lock,
+                'title': 'Enable App Lock',
+                'onTap': () async {
+                  if (_isAppLockEnabled) {
                     final prefs = await SharedPreferences.getInstance();
                     await prefs.setBool('app_lock_enabled', false);
-                    await _secureStorageService.writePin('');
+                    await _secureStorage.write(key: 'pin', value: '');
                     setState(() {
                       _isAppLockEnabled = false;
                     });
+                  } else {
+                    _showBiometricSetupDialog();
                   }
                 },
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Notifications',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: const Color(0xFF0A2540)),
-              ),
-              const SizedBox(height: 16),
-              SwitchListTile(
-                title: const Text('Daily Reminder'),
-                subtitle: const Text('Get reminded daily at 9 AM'),
-                value: _dailyReminderEnabled,
-                secondary: const Icon(Icons.notifications),
-                onChanged: (value) async {
+                'trailing': Switch(
+                  value: _isAppLockEnabled,
+                  activeThumbColor: const Color(0xFF00C853),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (value) async {
+                    if (value) {
+                      _showBiometricSetupDialog();
+                    } else {
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool('app_lock_enabled', false);
+                      await _secureStorage.write(key: 'pin', value: '');
+                      setState(() {
+                        _isAppLockEnabled = false;
+                      });
+                    }
+                  },
+                ),
+              },
+            ], isDarkMode),
+            const SizedBox(height: 16),
+            _buildSectionHeader('Notifications', isDarkMode),
+            _buildSection([
+              {
+                'icon': Icons.notifications,
+                'title': 'Daily Reminder',
+                'onTap': () async {
                   final prefs = await SharedPreferences.getInstance();
-                  await prefs.setBool('daily_reminder_enabled', value);
+                  final newValue = !_dailyReminderEnabled;
+                  await prefs.setBool('daily_reminder_enabled', newValue);
                   setState(() {
-                    _dailyReminderEnabled = value;
+                    _dailyReminderEnabled = newValue;
                   });
 
-                  // Schedule or cancel daily reminder
-                  if (value) {
-                    await _notificationService.scheduleDailyReminder(9, 0); // 9 AM
+                  if (newValue) {
+                    await _notificationService.scheduleDailyReminder(9, 0);
                   } else {
                     await _notificationService.cancelDailyReminder();
                   }
                 },
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Support & About',
-                style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: const Color(0xFF0A2540)),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.privacy_tip),
-                title: const Text('Privacy Policy'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () async {
-                  final currentContext = context;
-                  const url = 'https://www.google.com';
+                'trailing': Switch(
+                  value: _dailyReminderEnabled,
+                  activeThumbColor: const Color(0xFF00C853),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (value) async {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool('daily_reminder_enabled', value);
+                    setState(() {
+                      _dailyReminderEnabled = value;
+                    });
+
+                    if (value) {
+                      await _notificationService.scheduleDailyReminder(9, 0);
+                    } else {
+                      await _notificationService.cancelDailyReminder();
+                    }
+                  },
+                ),
+              },
+            ], isDarkMode),
+            const SizedBox(height: 16),
+            _buildSectionHeader('Support & About', isDarkMode),
+            _buildSection([
+              {
+                'icon': Icons.privacy_tip,
+                'title': 'Privacy Policy',
+                'onTap': () async {
                   try {
-                    await launchUrl(Uri.parse(url));
+                    await launchUrl(Uri.parse('https://www.google.com'));
                   } catch (e) {
-                    // Handle launch error silently
+                    if (!mounted) return;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Could not launch link'),
+                          ),
+                        );
+                      }
+                    });
                   }
-                  if (!currentContext.mounted) return;
-                  ScaffoldMessenger.of(currentContext).showSnackBar(
-                    const SnackBar(content: Text('Could not launch link')),
-                  );
                 },
-              ),
-              ListTile(
-                leading: const Icon(Icons.star),
-                title: const Text('Rate Us'),
-                trailing: const Icon(Icons.star_border),
-                onTap: () async {
-                  final currentContext = context;
-                  const url = 'market://details?id=com.example.finflow';
+              },
+              {
+                'icon': Icons.star,
+                'title': 'Rate Us',
+                'onTap': () async {
                   try {
-                    await launchUrl(Uri.parse(url));
+                    await launchUrl(
+                      Uri.parse('market://details?id=com.example.finflow'),
+                    );
                   } catch (e) {
-                    // Handle launch error silently
+                    if (!mounted) return;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Could not launch link'),
+                          ),
+                        );
+                      }
+                    });
                   }
-                  if (!currentContext.mounted) return;
-                  ScaffoldMessenger.of(currentContext).showSnackBar(
-                    const SnackBar(content: Text('Could not launch link')),
-                  );
                 },
-              ),
-              ListTile(
-                leading: const Icon(Icons.share),
-                title: const Text('Share App'),
-                trailing: const Icon(Icons.share),
-                onTap: _shareApp,
-              ),
-              const SizedBox(height: 24),
-              ListTile(
-                title: const Text('Logout'),
-                leading: const Icon(Icons.logout, color: Colors.red),
-                onTap: () async {
+              },
+              {'icon': Icons.share, 'title': 'Share App', 'onTap': _shareApp},
+              {
+                'icon': Icons.logout,
+                'title': 'Logout',
+                'onTap': () async {
                   final navigator = Navigator.of(context);
                   await FirebaseAuth.instance.signOut();
-                  navigator.pushNamedAndRemoveUntil('/login', (route) => false);
+                  navigator.pushAndRemoveUntil(
+                    MaterialPageRoute(
+                      builder: (context) => const WelcomeScreen(),
+                    ),
+                    (route) => false,
+                  );
                 },
-              ),
-              const SizedBox(height: 24),
-              const Center(
-                child: Text(
-                  'App Version 1.0.0',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 14,
-                  ),
+                'iconColor': Colors.red,
+              },
+            ], isDarkMode),
+            const SizedBox(height: 24),
+            Center(
+              child: Text(
+                'App Version 1.0.0',
+                style: GoogleFonts.plusJakartaSans(
+                  color: isDarkMode
+                      ? const Color(0xFFB0B0B0)
+                      : const Color(0xFF666666),
+                  fontSize: 13,
                 ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 32),
+            const SizedBox(height: 100),
+          ],
         ),
       ),
     );
   }
 
-  void _showBiometricSetupDialog() async {
-    final isBiometricAvailable = await _localAuthService.isBiometricAvailable();
+  Widget _buildSectionHeader(String title, bool isDarkMode) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Text(
+        title.toUpperCase(),
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: Colors.blueGrey,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
 
-    if (!mounted) return;
-
-    if (isBiometricAvailable) {
-      // Capture Navigator reference to avoid BuildContext across async gaps
-      final navigator = Navigator.of(context);
-      
-      showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Enable Biometric Authentication'),
-            content: const Text('Use your fingerprint or face ID to secure the app.'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  navigator.pop();
-                },
-                child: const Text('Cancel'),
+  Widget _buildSection(List<Map<String, dynamic>> items, bool isDarkMode) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          children: items.map((item) {
+            return ListTile(
+              onTap: item['onTap'],
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 4,
               ),
-              TextButton(
-                onPressed: () async {
-                  final isAuthenticated = await _localAuthService.authenticate();
-                  if (isAuthenticated) {
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.setBool('app_lock_enabled', true);
-                    if (!mounted) return;
-                    setState(() {
-                      _isAppLockEnabled = true;
-                    });
-                    // Use microtask with navigator reference to avoid BuildContext across async gaps
-                    if (!mounted) return;
-                    Future.microtask(() => navigator.pop());
-                  }
-                },
-                child: const Text('Enable'),
+              splashColor: Colors.transparent,
+              leading: Icon(
+                item['icon'],
+                color: item['iconColor'] ?? AppTheme.primaryColor,
+                size: 18,
               ),
-            ],
-          );
-        },
-      );
-    } else {
-      // Fallback to PIN if biometrics are not available
-      _showSetPinDialog();
-    }
+              title: Text(
+                item['title'],
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isDarkMode
+                      ? AppTheme.textPrimaryDark
+                      : AppTheme.textPrimaryLight,
+                ),
+              ),
+              subtitle: item['subtitle'] != null
+                  ? Text(
+                      item['subtitle'],
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10,
+                        color: isDarkMode
+                            ? AppTheme.textSecondaryDark
+                            : AppTheme.textSecondaryLight,
+                      ),
+                    )
+                  : null,
+              trailing:
+                  item['trailing'] ??
+                  Icon(
+                    Icons.chevron_right,
+                    color: isDarkMode
+                        ? AppTheme.textSecondaryDark
+                        : AppTheme.textSecondaryLight,
+                  ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
   }
 
   Future<void> _deleteAllData() async {
@@ -643,34 +767,80 @@ class SettingsScreenState extends State<SettingsScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('App reset to factory settings. Default categories restored.'),
+          content: Text(
+            'App reset to factory settings. Default categories restored.',
+          ),
           backgroundColor: Colors.green,
         ),
       );
 
-      // Restart the app after deleting data
       Future.delayed(const Duration(seconds: 1), () {
-        if (mounted) {
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            '/splash',
-            (route) => false,
-          );
-        }
+        if (!mounted) return;
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/splash', (route) => false);
       });
     } catch (e) {
-      if (!mounted) return;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Backup failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to delete data: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
+  void _showBiometricSetupDialog() async {
+    final isBiometricAvailable = await _localAuthService.isBiometricAvailable();
+
+    if (!mounted) return;
+
+    if (isBiometricAvailable) {
+      final navigator = Navigator.of(context);
+
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Enable Biometric Authentication'),
+            content: const Text(
+              'Use your fingerprint or face ID to secure the app.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  navigator.pop();
+                },
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final isAuthenticated = await _localAuthService
+                      .authenticate();
+                  if (isAuthenticated) {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool('app_lock_enabled', true);
+                    if (!mounted) return;
+                    setState(() {
+                      _isAppLockEnabled = true;
+                    });
+                    Future.microtask(() => navigator.pop());
+                  }
+                },
+                child: const Text('Enable'),
+              ),
+            ],
+          );
+        },
       );
+    } else {
+      _showSetPinDialog();
     }
   }
 
   void _showSetPinDialog() {
-    // Capture Navigator reference to avoid BuildContext across async gaps
     final navigator = Navigator.of(context);
 
     showDialog(
@@ -681,9 +851,7 @@ class SettingsScreenState extends State<SettingsScreen> {
           content: TextField(
             controller: _pinController,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Enter a 4-digit PIN',
-            ),
+            decoration: const InputDecoration(labelText: 'Enter a 4-digit PIN'),
             keyboardType: TextInputType.number,
             maxLength: 4,
           ),
@@ -697,15 +865,16 @@ class SettingsScreenState extends State<SettingsScreen> {
             TextButton(
               onPressed: () async {
                 if (_pinController.text.length == 4) {
-                  await _secureStorageService.writePin(_pinController.text);
+                  await _secureStorage.write(
+                    key: 'pin',
+                    value: _pinController.text,
+                  );
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.setBool('app_lock_enabled', true);
                   if (!mounted) return;
                   setState(() {
                     _isAppLockEnabled = true;
                   });
-                  // Use microtask with navigator reference to avoid BuildContext across async gaps
-                  if (!mounted) return;
                   Future.microtask(() => navigator.pop());
                 }
               },

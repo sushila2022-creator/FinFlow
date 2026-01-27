@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:finflow/models/category.dart';
-import 'package:finflow/services/category_service.dart';
-import 'package:finflow/utils/database_helper.dart';
+import 'package:finflow/providers/db_provider.dart';
 import 'package:finflow/utils/utility.dart' as utility;
 
 class ManageCategoriesScreen extends StatefulWidget {
@@ -12,7 +11,7 @@ class ManageCategoriesScreen extends StatefulWidget {
 }
 
 class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
-  final CategoryService _categoryService = CategoryService();
+  final DBProvider _dbProvider = DBProvider.db;
   List<Category> _categories = [];
   bool _isLoading = true;
 
@@ -25,12 +24,12 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
   Future<void> _loadCategories() async {
     setState(() => _isLoading = true);
     try {
-      _categories = await _categoryService.getAllCategories();
+      _categories = await _dbProvider.getAllCategories();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading categories: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error loading categories: $e')));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -41,36 +40,91 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
   Future<void> _addCategory() async {
     final TextEditingController nameController = TextEditingController();
     String selectedType = 'expense';
+    String selectedIcon = 'category';
 
-    final result = await showDialog<Map<String, String>?>(
+    final result = await showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           title: const Text('Add New Category'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Category Name',
-                  hintText: 'Enter category name',
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Category Name',
+                    hintText: 'Enter category name',
+                  ),
+                  autofocus: true,
                 ),
-                autofocus: true,
-              ),
-              const SizedBox(height: 16),
-              const Text('Category Type:', style: TextStyle(fontWeight: FontWeight.bold)),
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment<String>(value: 'expense', label: Text('Expense')),
-                  ButtonSegment<String>(value: 'income', label: Text('Income')),
-                ],
-                selected: {selectedType},
-                onSelectionChanged: (Set<String> newSelection) {
-                  setState(() => selectedType = newSelection.first);
-                },
-              ),
-            ],
+                const SizedBox(height: 16),
+                const Text(
+                  'Category Type:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment<String>(
+                      value: 'expense',
+                      label: Text('Expense'),
+                    ),
+                    ButtonSegment<String>(
+                      value: 'income',
+                      label: Text('Income'),
+                    ),
+                  ],
+                  selected: {selectedType},
+                  onSelectionChanged: (Set<String> newSelection) {
+                    setState(() => selectedType = newSelection.first);
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Select Icon:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 200,
+                  child: GridView.builder(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 6,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
+                    itemCount: utility.selectableIcons.length,
+                    itemBuilder: (context, index) {
+                      final iconEntry = utility.selectableIcons[index];
+                      final isSelected = iconEntry.key == selectedIcon;
+                      return InkWell(
+                        onTap: () {
+                          setState(() => selectedIcon = iconEntry.key);
+                        },
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Theme.of(
+                                    context,
+                                  ).primaryColor.withValues(alpha: 0.2)
+                                : Colors.grey[200],
+                            borderRadius: BorderRadius.circular(8),
+                            border: isSelected
+                                ? Border.all(
+                                    color: Theme.of(context).primaryColor,
+                                  )
+                                : null,
+                          ),
+                          child: Icon(iconEntry.value, size: 24),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -83,6 +137,7 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                   Navigator.pop(context, {
                     'name': nameController.text.trim(),
                     'type': selectedType,
+                    'icon': selectedIcon,
                   });
                 }
               },
@@ -97,12 +152,12 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
       try {
         final newCategory = Category(
           name: result['name']!,
-          icon: 'category', // Default icon
+          icon: result['icon']!,
           color: '2196F3', // Default blue color
           type: result['type']!,
         );
 
-        await _categoryService.addCategory(newCategory);
+        await _dbProvider.newCategory(newCategory);
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -111,14 +166,12 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
         _loadCategories();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error adding category: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error adding category: $e')));
       }
     }
   }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -131,19 +184,19 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _categories.isEmpty
-              ? const Center(
-                  child: Text(
-                    'No categories found. Tap + to add your first category.',
-                    textAlign: TextAlign.center,
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: _categories.length,
-                  itemBuilder: (context, index) {
-                    final category = _categories[index];
-                    return _buildCategoryTile(category);
-                  },
-                ),
+          ? const Center(
+              child: Text(
+                'No categories found. Tap + to add your first category.',
+                textAlign: TextAlign.center,
+              ),
+            )
+          : ListView.builder(
+              itemCount: _categories.length,
+              itemBuilder: (context, index) {
+                final category = _categories[index];
+                return _buildCategoryTile(category);
+              },
+            ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addCategory,
         tooltip: 'Add Category',
@@ -154,8 +207,12 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
   }
 
   Future<void> _editCategory(Category category) async {
-    final TextEditingController nameController = TextEditingController(text: category.name);
-    final TextEditingController budgetController = TextEditingController(text: category.budgetLimit.toString());
+    final TextEditingController nameController = TextEditingController(
+      text: category.name,
+    );
+    final TextEditingController budgetController = TextEditingController(
+      text: category.budgetLimit.toString(),
+    );
     String selectedType = category.type;
     String selectedIcon = category.icon;
 
@@ -186,11 +243,20 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                   keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 16),
-                const Text('Category Type:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  'Category Type:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment<String>(value: 'expense', label: Text('Expense')),
-                    ButtonSegment<String>(value: 'income', label: Text('Income')),
+                    ButtonSegment<String>(
+                      value: 'expense',
+                      label: Text('Expense'),
+                    ),
+                    ButtonSegment<String>(
+                      value: 'income',
+                      label: Text('Income'),
+                    ),
                   ],
                   selected: {selectedType},
                   onSelectionChanged: (Set<String> newSelection) {
@@ -198,16 +264,20 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-                const Text('Select Icon:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  'Select Icon:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
                 SizedBox(
                   height: 200,
                   child: GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 6,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 8,
-                    ),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 6,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
                     itemCount: utility.selectableIcons.length,
                     itemBuilder: (context, index) {
                       final iconEntry = utility.selectableIcons[index];
@@ -218,9 +288,17 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                         },
                         child: Container(
                           decoration: BoxDecoration(
-                            color: isSelected ? Theme.of(context).primaryColor.withValues(alpha: 0.2) : Colors.grey[200],
+                            color: isSelected
+                                ? Theme.of(
+                                    context,
+                                  ).primaryColor.withValues(alpha: 0.2)
+                                : Colors.grey[200],
                             borderRadius: BorderRadius.circular(8),
-                            border: isSelected ? Border.all(color: Theme.of(context).primaryColor) : null,
+                            border: isSelected
+                                ? Border.all(
+                                    color: Theme.of(context).primaryColor,
+                                  )
+                                : null,
                           ),
                           child: Icon(iconEntry.value, size: 24),
                         ),
@@ -239,7 +317,8 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
             TextButton(
               onPressed: () {
                 if (nameController.text.trim().isNotEmpty) {
-                  final budgetLimit = double.tryParse(budgetController.text) ?? 0.0;
+                  final budgetLimit =
+                      double.tryParse(budgetController.text) ?? 0.0;
                   Navigator.pop(context, {
                     'name': nameController.text.trim(),
                     'budgetLimit': budgetLimit,
@@ -266,18 +345,20 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
           budgetLimit: result['budgetLimit']!,
         );
 
-        await _categoryService.updateCategory(updatedCategory);
+        await _dbProvider.updateCategory(updatedCategory);
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${updatedCategory.name} updated successfully')),
+          SnackBar(
+            content: Text('${updatedCategory.name} updated successfully'),
+          ),
         );
         _loadCategories();
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating category: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error updating category: $e')));
       }
     }
   }
@@ -287,6 +368,7 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
     final iconData = utility.getIconData(category.icon) ?? Icons.category;
 
     return ListTile(
+      dense: true,
       leading: CircleAvatar(
         backgroundColor: color.withValues(alpha: 0.2),
         child: Icon(iconData, color: color),
@@ -305,7 +387,7 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
           IconButton(
             icon: const Icon(Icons.delete),
             onPressed: () async {
-              await DatabaseHelper.instance.deleteCategory(category.id!);
+              await _dbProvider.deleteCategory(category.id!);
               _loadCategories();
             },
           ),
