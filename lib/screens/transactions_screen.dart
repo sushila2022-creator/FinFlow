@@ -58,7 +58,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   @override
   Widget build(BuildContext context) {
     // AppBar always dark navy with white text/icons
-    const appBarBgColor = Color(0xFF0D2B45);
+    final appBarBgColor = AppTheme.primaryColor;
     const appBarTextColor = Colors.white;
     const searchBorderColor = Colors.white;
 
@@ -220,14 +220,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                           ),
                           decoration: BoxDecoration(
                             color: _filterType == 'Income'
-                                ? const Color(
-                                    0xFF10B981,
-                                  ).withValues(alpha: 0.15)
+                                ? AppTheme.incomeColor.withValues(alpha: 0.15)
                                 : Theme.of(context).cardColor,
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
                               color: _filterType == 'Income'
-                                  ? const Color(0xFF10B981)
+                                  ? AppTheme.incomeColor
                                   : Colors.transparent,
                               width: 1.5,
                             ),
@@ -251,15 +249,15 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                                   Container(
                                     padding: const EdgeInsets.all(6),
                                     decoration: BoxDecoration(
-                                      color: const Color(
-                                        0xFF10B981,
-                                      ).withValues(alpha: 0.1),
+                                      color: AppTheme.incomeColor.withValues(
+                                        alpha: 0.1,
+                                      ),
                                       shape: BoxShape.circle,
                                     ),
                                     child: const Icon(
                                       Icons.arrow_downward,
                                       size: 14,
-                                      color: Color(0xFF10B981),
+                                      color: AppTheme.incomeColor,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -283,7 +281,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                                       style: GoogleFonts.plusJakartaSans(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF10B981),
+                                        color: AppTheme.incomeColor,
                                       ),
                                     ),
                                     TextSpan(
@@ -291,7 +289,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                                       style: GoogleFonts.plusJakartaSans(
                                         fontSize: 20, // Full page emphasis
                                         fontWeight: FontWeight.w800,
-                                        color: const Color(0xFF10B981),
+                                        color: AppTheme.incomeColor,
                                       ),
                                     ),
                                   ],
@@ -315,14 +313,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                           ),
                           decoration: BoxDecoration(
                             color: _filterType == 'Expense'
-                                ? const Color(
-                                    0xFFF43F5E,
-                                  ).withValues(alpha: 0.15)
+                                ? AppTheme.expenseColor.withValues(alpha: 0.15)
                                 : Theme.of(context).cardColor,
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
                               color: _filterType == 'Expense'
-                                  ? const Color(0xFFF43F5E)
+                                  ? AppTheme.expenseColor
                                   : Colors.transparent,
                               width: 1.5,
                             ),
@@ -346,15 +342,15 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                                   Container(
                                     padding: const EdgeInsets.all(6),
                                     decoration: BoxDecoration(
-                                      color: const Color(
-                                        0xFFF43F5E,
-                                      ).withValues(alpha: 0.1),
+                                      color: AppTheme.expenseColor.withValues(
+                                        alpha: 0.1,
+                                      ),
                                       shape: BoxShape.circle,
                                     ),
                                     child: const Icon(
                                       Icons.arrow_upward,
                                       size: 14,
-                                      color: Color(0xFFF43F5E),
+                                      color: AppTheme.expenseColor,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
@@ -378,7 +374,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                                       style: GoogleFonts.plusJakartaSans(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
-                                        color: const Color(0xFFF43F5E),
+                                        color: AppTheme.expenseColor,
                                       ),
                                     ),
                                     TextSpan(
@@ -386,7 +382,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                                       style: GoogleFonts.plusJakartaSans(
                                         fontSize: 20, // Full page emphasis
                                         fontWeight: FontWeight.w800,
-                                        color: const Color(0xFFF43F5E),
+                                        color: AppTheme.expenseColor,
                                       ),
                                     ),
                                   ],
@@ -476,7 +472,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       secondaryBackground: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
         decoration: BoxDecoration(
-          color: const Color(0xFFF43F5E),
+          color: AppTheme.expenseColor,
           borderRadius: BorderRadius.circular(12),
         ),
         alignment: Alignment.centerRight,
@@ -575,18 +571,13 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             width: 32, // Slightly larger touch target for icon
             height: 32,
             decoration: BoxDecoration(
-              color:
-                  (isExpense
-                          ? const Color(0xFFF43F5E)
-                          : const Color(0xFF10B981))
-                      .withValues(alpha: 0.1),
+              color: (isExpense ? AppTheme.expenseColor : AppTheme.incomeColor)
+                  .withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(16), // Circle
             ),
             child: Icon(
               categoryIcon,
-              color: isExpense
-                  ? const Color(0xFFF43F5E)
-                  : const Color(0xFF10B981),
+              color: isExpense ? AppTheme.expenseColor : AppTheme.incomeColor,
               size: 16, // Small icon
             ),
           ),
@@ -618,11 +609,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 TextSpan(
                   text: currencyProvider.currentCurrencySymbol,
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: isExpense
-                        ? const Color(0xFFF43F5E)
-                        : const Color(0xFF10B981),
+                        ? AppTheme.expenseColor
+                        : AppTheme.incomeColor,
                   ),
                 ),
                 TextSpan(
@@ -633,11 +624,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                         : 2,
                   ),
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14, // Slightly emphasized amount
-                    fontWeight: FontWeight.w700,
+                    fontSize: 13, // Standardized to match Dashboard
+                    fontWeight: FontWeight.w600,
                     color: isExpense
-                        ? const Color(0xFFF43F5E)
-                        : const Color(0xFF10B981),
+                        ? AppTheme.expenseColor
+                        : AppTheme.incomeColor,
                   ),
                 ),
               ],

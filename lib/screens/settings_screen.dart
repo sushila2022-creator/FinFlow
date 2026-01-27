@@ -43,29 +43,6 @@ class SettingsScreenState extends State<SettingsScreen> {
   bool _isBackupInProgress = false;
   bool _isRestoreInProgress = false;
 
-  final List<Map<String, String>> currencies = [
-    {'name': 'US Dollar', 'symbol': '\$'},
-    {'name': 'Euro', 'symbol': '€'},
-    {'name': 'British Pound', 'symbol': '£'},
-    {'name': 'Japanese Yen', 'symbol': '¥'},
-    {'name': 'Australian Dollar', 'symbol': 'A\$'},
-    {'name': 'Canadian Dollar', 'symbol': 'C\$'},
-    {'name': 'Swiss Franc', 'symbol': 'CHF'},
-    {'name': 'Chinese Yuan', 'symbol': '¥'},
-    {'name': 'UAE Dirham', 'symbol': 'د.إ'},
-    {'name': 'Saudi Riyal', 'symbol': 'ر.س'},
-    {'name': 'Indian Rupee', 'symbol': '₹'},
-    {'name': 'Singapore Dollar', 'symbol': 'S\$'},
-    {'name': 'Hong Kong Dollar', 'symbol': 'HK\$'},
-    {'name': 'South Korean Won', 'symbol': '₩'},
-    {'name': 'Turkish Lira', 'symbol': '₺'},
-    {'name': 'Brazilian Real', 'symbol': 'R\$'},
-    {'name': 'Mexican Peso', 'symbol': '\$'},
-    {'name': 'Swedish Krona', 'symbol': 'kr'},
-    {'name': 'Norwegian Krone', 'symbol': 'kr'},
-    {'name': 'New Zealand Dollar', 'symbol': 'NZ\$'},
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -129,6 +106,7 @@ class SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (BuildContext context) {
+        final currencies = CurrencyProvider.getAvailableCurrencies();
         return AlertDialog(
           title: const Text('Select Currency'),
           content: SizedBox(
@@ -341,7 +319,6 @@ class SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: const Color(
           0xFF0D2B45,
         ), // Deep Navy - consistent across app
-        toolbarHeight: kToolbarHeight + 20, // Professional spacious look
         title: Text(
           'Settings',
           style: GoogleFonts.plusJakartaSans(
@@ -365,12 +342,13 @@ class SettingsScreenState extends State<SettingsScreen> {
             _buildSectionHeader('General', isDarkMode),
             Consumer<CurrencyProvider>(
               builder: (context, currencyProvider, child) {
-                final currentCurrency = currencies.firstWhere(
-                  (currency) =>
-                      currency['symbol'] ==
-                      currencyProvider.currentCurrencySymbol,
-                  orElse: () => {'name': 'US Dollar', 'symbol': '\$'},
-                );
+                final currentCurrency =
+                    CurrencyProvider.getAvailableCurrencies().firstWhere(
+                      (currency) =>
+                          currency['symbol'] ==
+                          currencyProvider.currentCurrencySymbol,
+                      orElse: () => {'name': 'US Dollar', 'symbol': '\$'},
+                    );
 
                 return _buildSection([
                   {
@@ -660,9 +638,11 @@ class SettingsScreenState extends State<SettingsScreen> {
       child: Text(
         title.toUpperCase(),
         style: GoogleFonts.plusJakartaSans(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          color: Colors.blueGrey,
+          fontSize: 13, // Increased from 12
+          fontWeight: FontWeight.w700, // Adjusted weight
+          color: isDarkMode
+              ? AppTheme.textSecondaryDark
+              : AppTheme.textSecondaryLight, // Use AppTheme
           letterSpacing: 1.2,
         ),
       ),
@@ -703,7 +683,7 @@ class SettingsScreenState extends State<SettingsScreen> {
               title: Text(
                 item['title'],
                 style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
+                  fontSize: 14, // Increased from 12 to match Dashboard standard
                   fontWeight: FontWeight.w600,
                   color: isDarkMode
                       ? AppTheme.textPrimaryDark

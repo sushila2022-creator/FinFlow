@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:finflow/models/category.dart';
 import '../providers/db_provider.dart';
 import 'package:finflow/utils/utility.dart' as utility;
+import 'package:finflow/utils/app_theme.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class CategoryScreen extends StatefulWidget {
   const CategoryScreen({super.key});
@@ -76,7 +78,10 @@ class _CategoryScreenState extends State<CategoryScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.plusJakartaSans(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -113,7 +118,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Manage Categories'),
-        backgroundColor: const Color(0xFF0D2B45),
+        backgroundColor: AppTheme.primaryColor,
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -256,7 +261,7 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.category == null ? 'Add Category' : 'Edit Category'),
-        backgroundColor: const Color(0xFF0D2B45),
+        backgroundColor: AppTheme.primaryColor,
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
@@ -323,9 +328,12 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Select Icon',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         const SizedBox(height: 12),
         Container(
@@ -391,7 +399,7 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
                       const SizedBox(height: 6),
                       Text(
                         iconEntry.key,
-                        style: TextStyle(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           color: isSelected ? iconColor : Colors.grey.shade500,
                           fontWeight: isSelected
@@ -440,9 +448,9 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Selected Icon',
-                      style: TextStyle(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                         color: Colors.grey,
@@ -453,7 +461,7 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
                       _iconController.text.isEmpty
                           ? 'None selected'
                           : _iconController.text.toUpperCase(),
-                      style: TextStyle(
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: iconColor,
@@ -494,7 +502,7 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
           child: Center(
             child: Text(
               '#$colorHex',
-              style: TextStyle(
+              style: GoogleFonts.plusJakartaSans(
                 color: color.computeLuminance() > 0.5
                     ? Colors.black
                     : Colors.white,
@@ -510,9 +518,12 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Category Type',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         const SizedBox(height: 8),
         Row(
@@ -526,10 +537,12 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
                     _selectedType = 'expense';
                   });
                 },
-                selectedColor: Colors.red.withValues(alpha: 0.2),
+                selectedColor: AppTheme.expenseColor.withValues(alpha: 0.2),
                 backgroundColor: Colors.grey.withValues(alpha: 0.1),
-                labelStyle: TextStyle(
-                  color: _selectedType == 'expense' ? Colors.red : Colors.grey,
+                labelStyle: GoogleFonts.plusJakartaSans(
+                  color: _selectedType == 'expense'
+                      ? AppTheme.expenseColor
+                      : Colors.grey,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -544,10 +557,12 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
                     _selectedType = 'income';
                   });
                 },
-                selectedColor: Colors.green.withValues(alpha: 0.2),
+                selectedColor: AppTheme.incomeColor.withValues(alpha: 0.2),
                 backgroundColor: Colors.grey.withValues(alpha: 0.1),
-                labelStyle: TextStyle(
-                  color: _selectedType == 'income' ? Colors.green : Colors.grey,
+                labelStyle: GoogleFonts.plusJakartaSans(
+                  color: _selectedType == 'income'
+                      ? AppTheme.incomeColor
+                      : Colors.grey,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -566,7 +581,10 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
 
     final iconData = utility.getIconData(iconName);
     if (iconData == null) {
-      return const Text('Icon not found', style: TextStyle(color: Colors.red));
+      return Text(
+        'Icon not found',
+        style: GoogleFonts.plusJakartaSans(color: Colors.red),
+      );
     }
 
     final colorHex = _colorController.text.trim();

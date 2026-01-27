@@ -6,8 +6,6 @@ import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:finflow/models/transaction.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:async';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -24,82 +22,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   // SINGLE SOURCE OF TRUTH: Current selected period
   DateTime _selectedPeriod = DateTime.now();
 
-  // Debouncing and caching
-  Timer? _debounceTimer;
-  static const _cacheKeyPrefix = 'analytics_cache_';
-
   @override
   void initState() {
     super.initState();
-    // Set default to current year for Year tab
     _selectedPeriod = DateTime.now();
-    debugPrint('Analytics: Initialized with selectedPeriod: $_selectedPeriod');
-
-    // Load cached data if available
-    _loadCachedData();
-  }
-
-  @override
-  void dispose() {
-    _debounceTimer?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _loadCachedData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final cacheKey = _getCacheKey();
-    final cachedData = prefs.getString(cacheKey);
-
-    if (cachedData != null) {
-      // Data is cached, use it
-      // Note: In a real implementation, you'd parse the cached JSON
-      // For now, we'll just trigger a refresh to get fresh data
-      _refreshData();
-    }
-  }
-
-  String _getCacheKey() {
-    final period = _getPeriodString();
-    return '$_cacheKeyPrefix${_selectedTabIndex}_$period';
-  }
-
-  String _getPeriodString() {
-    switch (_selectedTabIndex) {
-      case 0: // Today
-        return _selectedPeriod.toIso8601String().split('T').first;
-      case 1: // Week
-        // Calculate week of year manually
-        final firstDayOfYear = DateTime(_selectedPeriod.year, 1, 1);
-        final daysSinceFirst = _selectedPeriod
-            .difference(firstDayOfYear)
-            .inDays;
-        final weekOfYear = (daysSinceFirst ~/ 7) + 1;
-        return 'week_${_selectedPeriod.year}_$weekOfYear';
-      case 2: // Month
-        return '${_selectedPeriod.year}-${_selectedPeriod.month}';
-      case 3: // Year
-        return _selectedPeriod.year.toString();
-      default:
-        return 'default';
-    }
-  }
-
-  void _refreshData() {
-    // This would trigger data fetching in a real implementation
-    // For now, we'll just rebuild the UI
-    setState(() {
-      // Update UI state
-    });
   }
 
   // Color palette matching Dashboard's Deep Navy (#0D2B45) and Emerald (#006D5B)
-  static const Color primaryNavy = Color(0xFF0D2B45);
-  static const Color accentEmerald = Color(0xFF006D5B);
-
-  // Scale factor for compact design
-  double get _scale => 0.8;
-
-  double _scaled(double value) => value * _scale;
+  static const Color primaryNavy = AppTheme.primaryColor;
+  static const Color accentEmerald = AppTheme.incomeColor;
 
   Map<String, double> _computeCategoryData(
     List<Transaction> transactions,
@@ -192,7 +123,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: const Color(0xFF0D2B45),
-        toolbarHeight: 80,
         title: Text(
           'Analytics',
           style: GoogleFonts.plusJakartaSans(
@@ -263,10 +193,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 Expanded(
                   child: SingleChildScrollView(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: _scaled(16)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Column(
                         children: [
-                          SizedBox(height: _scaled(16)),
+                          const SizedBox(height: 16),
 
                           // Toggle and Total
                           _buildToggleAndTotal(
@@ -275,17 +205,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             isDarkMode,
                           ),
 
-                          SizedBox(height: _scaled(16)),
+                          const SizedBox(height: 16),
 
                           // Bar Chart (Dynamic based on selected tab)
                           _buildBarChart(chartData, isDarkMode),
 
-                          SizedBox(height: _scaled(24)),
+                          const SizedBox(height: 24),
 
                           // Spending by Category Header
                           _buildCategoryHeader(isDarkMode),
 
-                          SizedBox(height: _scaled(12)),
+                          const SizedBox(height: 12),
 
                           // Category List
                           _buildCategoryList(
@@ -295,7 +225,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             isDarkMode,
                           ),
 
-                          SizedBox(height: _scaled(80)), // Space for bottom nav
+                          const SizedBox(height: 80), // Space for bottom nav
                         ],
                       ),
                     ),
@@ -519,7 +449,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             children: [
                               Text(
                                 months[index],
-                                style: GoogleFonts.inter(
+                                style: GoogleFonts.plusJakartaSans(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
                                   color: isSelected
@@ -532,7 +462,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                               const SizedBox(height: 2),
                               Text(
                                 monthIndex.toString().padLeft(2, '0'),
-                                style: GoogleFonts.inter(
+                                style: GoogleFonts.plusJakartaSans(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
                                   color: isSelected
@@ -582,7 +512,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       const SizedBox(width: 12),
                       Text(
                         '${months[selectedMonth - 1]} $selectedYear',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.plusJakartaSans(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: isDarkMode ? Colors.white : primaryNavy,
@@ -616,7 +546,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           ),
                           child: Text(
                             'Cancel',
-                            style: GoogleFonts.inter(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
                               color: isDarkMode
@@ -643,25 +573,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             );
 
                             // Only update if selection actually changed
+                            // Only update if selection actually changed
                             if (newDate != _selectedPeriod) {
-                              // Cancel any existing debounce timer
-                              _debounceTimer?.cancel();
-
                               // Update state immediately for instant UI feedback
                               setState(() {
                                 _selectedPeriod = newDate;
-                                debugPrint(
-                                  'Analytics: Selected period updated to: $_selectedPeriod',
-                                );
                               });
-
-                              // Debounce the data refresh to minimize API calls
-                              _debounceTimer = Timer(
-                                const Duration(milliseconds: 300),
-                                () {
-                                  _refreshData();
-                                },
-                              );
                             }
                           },
                           style: ElevatedButton.styleFrom(
@@ -673,7 +590,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           ),
                           child: Text(
                             'Select',
-                            style: GoogleFonts.inter(
+                            style: GoogleFonts.plusJakartaSans(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
                               color: Colors.white,
@@ -731,12 +648,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Widget _buildTabBar(bool isDarkMode) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: _scaled(16)),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
-        padding: EdgeInsets.all(_scaled(3)),
+        padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
           color: isDarkMode ? const Color(0xFF1E1E1E) : const Color(0xFFF1F5F9),
-          borderRadius: BorderRadius.circular(_scaled(14)),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           children: List.generate(_tabLabels.length, (index) {
@@ -747,19 +664,29 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     _selectedTabIndex = index;
                   });
                 },
-                child: Container(
-                  padding: EdgeInsets.symmetric(vertical: _scaled(10)),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
                     color: _selectedTabIndex == index
                         ? primaryNavy
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(_scaled(11)),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: _selectedTabIndex == index
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
                   ),
                   child: Text(
                     _tabLabels[index],
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(
-                      fontSize: _scaled(12),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
                       fontWeight: _selectedTabIndex == index
                           ? FontWeight.w600
                           : FontWeight.w500,
@@ -788,12 +715,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       children: [
         // Toggle Switch
         Container(
-          padding: EdgeInsets.all(_scaled(3)),
+          padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
             color: isDarkMode
                 ? const Color(0xFF1E1E1E)
                 : const Color(0xFFF1F5F9),
-            borderRadius: BorderRadius.circular(_scaled(12)),
+            borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
             children: [
@@ -801,30 +728,39 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               GestureDetector(
                 onTap: () => setState(() => _showExpenses = true),
                 child: Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: _scaled(12),
-                    vertical: _scaled(8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10, // Reduced from 16 to prevent overflow
+                    vertical: 10,
                   ),
                   decoration: BoxDecoration(
                     color: _showExpenses ? Colors.white : Colors.transparent,
-                    borderRadius: BorderRadius.circular(_scaled(10)),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: _showExpenses
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
                   ),
                   child: Row(
                     children: [
                       Icon(
                         Icons.south_west,
-                        size: _scaled(12),
+                        size: 16,
                         color: _showExpenses
-                            ? const Color(0xFFF43F5E)
+                            ? AppTheme.expenseColor
                             : (isDarkMode
                                   ? const Color(0xFFB0B0B0)
                                   : const Color(0xFF64748B)),
                       ),
-                      SizedBox(width: _scaled(4)),
+                      const SizedBox(width: 4), // Reduced from 6
                       Text(
                         'Expenses',
-                        style: GoogleFonts.inter(
-                          fontSize: _scaled(11),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: _showExpenses
                               ? primaryNavy
@@ -842,30 +778,39 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               GestureDetector(
                 onTap: () => setState(() => _showExpenses = false),
                 child: Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: _scaled(12),
-                    vertical: _scaled(8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10, // Reduced from 16
+                    vertical: 10,
                   ),
                   decoration: BoxDecoration(
                     color: !_showExpenses ? Colors.white : Colors.transparent,
-                    borderRadius: BorderRadius.circular(_scaled(10)),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: !_showExpenses
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
                   ),
                   child: Row(
                     children: [
                       Icon(
                         Icons.north_east,
-                        size: _scaled(12),
+                        size: 16,
                         color: !_showExpenses
                             ? accentEmerald
                             : (isDarkMode
                                   ? const Color(0xFFB0B0B0)
                                   : const Color(0xFF64748B)),
                       ),
-                      SizedBox(width: _scaled(4)),
+                      const SizedBox(width: 4), // Reduced from 6
                       Text(
                         'Income',
-                        style: GoogleFonts.inter(
-                          fontSize: _scaled(11),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: !_showExpenses
                               ? primaryNavy
@@ -882,7 +827,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ),
         ),
 
-        Spacer(),
+        const Spacer(),
 
         // Total Amount
         Column(
@@ -890,21 +835,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           children: [
             Text(
               _showExpenses ? 'Total Spent' : 'Total Earned',
-              style: GoogleFonts.inter(
-                fontSize: _scaled(10),
-                fontWeight: FontWeight.w500,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 10,
                 color: isDarkMode
                     ? const Color(0xFFB0B0B0)
                     : const Color(0xFF64748B),
+                fontWeight: FontWeight.w500,
               ),
             ),
-            SizedBox(height: _scaled(2)),
+            const SizedBox(height: 2),
             Text(
               AppTheme.formatCurrency(totalAmount, symbol: currencySymbol),
-              style: GoogleFonts.inter(
-                fontSize: _scaled(18),
-                fontWeight: FontWeight.w700,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 28, // Standardized to match Dashboard Balance
+                fontWeight: FontWeight.w900,
                 color: isDarkMode ? Colors.white : primaryNavy,
+                letterSpacing: -0.8,
               ),
             ),
           ],
@@ -922,10 +868,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final labels = _getChartLabels(_selectedTabIndex);
 
     return Container(
-      padding: EdgeInsets.all(_scaled(16)),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(_scaled(20)),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDarkMode ? const Color(0xFF2D2D2D) : const Color(0xFFF1F5F9),
         ),
@@ -946,8 +892,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   children: [
                     // Bar Container
                     Container(
-                      height: _scaled(120),
-                      margin: EdgeInsets.symmetric(horizontal: _scaled(4)),
+                      height: 120,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
                       child: Stack(
                         alignment: Alignment.bottomCenter,
                         children: [
@@ -958,17 +904,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                               color: isDarkMode
                                   ? const Color(0xFF2D2D2D)
                                   : const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.vertical(
-                                top: Radius.circular(_scaled(6)),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(6),
                               ),
                             ),
                           ),
 
                           // Bar
                           AnimatedContainer(
-                            duration: Duration(milliseconds: 600),
+                            duration: const Duration(milliseconds: 600),
                             curve: Curves.easeOut,
-                            height: _scaled(120) * heightPercent,
+                            height: 120 * heightPercent,
                             width: double.infinity,
                             decoration: BoxDecoration(
                               color: accentEmerald.withValues(
@@ -976,8 +922,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                     ? 1.0
                                     : 0.3 + (heightPercent * 0.4),
                               ),
-                              borderRadius: BorderRadius.vertical(
-                                top: Radius.circular(_scaled(6)),
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(6),
                               ),
                             ),
                           ),
@@ -985,28 +931,26 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           // Highlight label on middle bar
                           if (isHighlighted && chartData[index] > 0)
                             Positioned(
-                              top: _scaled(8),
+                              top: 8,
                               left: 0,
                               right: 0,
                               child: Center(
                                 child: Container(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: _scaled(6),
-                                    vertical: _scaled(2),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
                                   ),
                                   decoration: BoxDecoration(
                                     color: primaryNavy,
-                                    borderRadius: BorderRadius.circular(
-                                      _scaled(4),
-                                    ),
+                                    borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
                                     AppTheme.formatCurrency(
                                       chartData[index],
                                       symbol: '₹',
                                     ).replaceAll('.00', 'k'),
-                                    style: GoogleFonts.inter(
-                                      fontSize: _scaled(8),
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 10,
                                       fontWeight: FontWeight.w600,
                                       color: Colors.white,
                                     ),
@@ -1018,13 +962,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       ),
                     ),
 
-                    SizedBox(height: _scaled(8)),
+                    const SizedBox(height: 8),
 
                     // Label
                     Text(
                       labels[index],
-                      style: GoogleFonts.inter(
-                        fontSize: _scaled(9),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: isHighlighted
                             ? (isDarkMode ? accentEmerald : primaryNavy)
@@ -1084,8 +1028,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       children: [
         Text(
           'Spending by Category',
-          style: GoogleFonts.inter(
-            fontSize: _scaled(16),
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 18,
             fontWeight: FontWeight.w700,
             color: isDarkMode ? Colors.white : primaryNavy,
           ),
@@ -1094,8 +1038,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           onTap: () {},
           child: Text(
             'View All',
-            style: GoogleFonts.inter(
-              fontSize: _scaled(12),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
               fontWeight: FontWeight.w600,
               color: accentEmerald,
             ),
@@ -1113,35 +1057,35 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   ) {
     if (data.isEmpty) {
       return Container(
-        padding: EdgeInsets.all(_scaled(20)),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          borderRadius: BorderRadius.circular(_scaled(16)),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
           children: [
             Icon(
               Icons.pie_chart_outline,
-              size: _scaled(48),
+              size: 48,
               color: isDarkMode
                   ? const Color(0xFFB0B0B0)
                   : const Color(0xFF64748B),
             ),
-            SizedBox(height: _scaled(12)),
+            const SizedBox(height: 12),
             Text(
               'No data available',
-              style: GoogleFonts.inter(
-                fontSize: _scaled(14),
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: isDarkMode ? Colors.white : primaryNavy,
               ),
             ),
-            SizedBox(height: _scaled(4)),
+            const SizedBox(height: 4),
             Text(
               'Add some transactions to see category breakdown',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: _scaled(11),
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
                 color: isDarkMode
                     ? const Color(0xFFB0B0B0)
                     : const Color(0xFF64748B),
@@ -1161,14 +1105,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final percentage = totalAmount > 0
             ? (entry.value / totalAmount) * 100
             : 0;
-        final categoryColor = _getCategoryColor(entry.key);
+        final categoryColor = AppTheme.getCategoryColor(entry.key);
 
         return Container(
-          margin: EdgeInsets.only(bottom: _scaled(8)),
-          padding: EdgeInsets.all(_scaled(16)),
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-            borderRadius: BorderRadius.circular(_scaled(16)),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isDarkMode
                   ? const Color(0xFF2D2D2D)
@@ -1179,19 +1123,19 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             children: [
               // Category Icon
               Container(
-                width: _scaled(36),
-                height: _scaled(36),
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: categoryColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(_scaled(10)),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  _getCategoryIcon(entry.key),
-                  size: _scaled(18),
+                  AppTheme.getCategoryIcon(entry.key),
+                  size: 20,
                   color: categoryColor,
                 ),
               ),
-              SizedBox(width: _scaled(12)),
+              const SizedBox(width: 12),
 
               // Category Name and Percentage
               Expanded(
@@ -1200,20 +1144,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   children: [
                     Text(
                       entry.key,
-                      style: GoogleFonts.inter(
-                        fontSize: _scaled(13),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: isDarkMode ? Colors.white : primaryNavy,
                       ),
                     ),
-                    SizedBox(height: _scaled(2)),
+                    const SizedBox(height: 2),
                     Text(
                       '${percentage.toStringAsFixed(1)}%',
-                      style: GoogleFonts.inter(
-                        fontSize: _scaled(11),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
                         color: isDarkMode
                             ? const Color(0xFFB0B0B0)
                             : const Color(0xFF64748B),
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
@@ -1223,9 +1168,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               // Amount
               Text(
                 AppTheme.formatCurrency(entry.value, symbol: currencySymbol),
-                style: GoogleFonts.inter(
-                  fontSize: _scaled(14),
-                  fontWeight: FontWeight.w700,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13, // Standardized to match Dashboard/Transactions
+                  fontWeight: FontWeight.w600,
                   color: isDarkMode ? Colors.white : primaryNavy,
                 ),
               ),
@@ -1234,54 +1179,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         );
       }).toList(),
     );
-  }
-
-  Color _getCategoryColor(String category) {
-    // Map categories to colors
-    switch (category.toLowerCase()) {
-      case 'food':
-        return const Color(0xFFF59E0B);
-      case 'transport':
-        return const Color(0xFF3B82F6);
-      case 'shopping':
-        return const Color(0xFF8B5CF6);
-      case 'entertainment':
-        return const Color(0xFFEC4899);
-      case 'bills':
-        return const Color(0xFF10B981);
-      case 'health':
-        return const Color(0xFFEF4444);
-      case 'education':
-        return const Color(0xFF6366F1);
-      case 'travel':
-        return const Color(0xFFF97316);
-      default:
-        return accentEmerald;
-    }
-  }
-
-  IconData _getCategoryIcon(String category) {
-    // Map categories to icons
-    switch (category.toLowerCase()) {
-      case 'food':
-        return Icons.restaurant;
-      case 'transport':
-        return Icons.directions_car;
-      case 'shopping':
-        return Icons.shopping_bag;
-      case 'entertainment':
-        return Icons.movie;
-      case 'bills':
-        return Icons.receipt;
-      case 'health':
-        return Icons.medical_services;
-      case 'education':
-        return Icons.school;
-      case 'travel':
-        return Icons.flight;
-      default:
-        return Icons.category;
-    }
   }
 
   List<double> _getChartDataForTab(

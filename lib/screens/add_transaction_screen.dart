@@ -115,7 +115,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             const SizedBox(height: 24),
             Text(
               'Attach Receipt',
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.plusJakartaSans(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
                 color: isDarkMode
@@ -751,55 +751,27 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     );
 
     try {
-      if (widget.transactionToEdit != null) {
-        // Update existing transaction in Firestore
-        final transactionId = widget.transactionToEdit!['id'];
-        if (transactionId == null || transactionId.toString().isEmpty) {
-          // Generate a new ID if missing
-          final newId = DateTime.now().millisecondsSinceEpoch.toString();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Transaction ID was missing, using new ID: $newId'),
-              backgroundColor: AppTheme.accentColor,
-            ),
-          );
+      final transactionId = widget.transactionToEdit?['id']?.toString();
 
-          final transaction = Transaction(
-            id: newId,
-            description: _descController.text,
-            amount: amount,
-            currencyCode: currencyProvider.currentCurrencyCode,
-            date: _selectedDate,
-            category: _selectedCategory!,
-            categoryId: matchingCategory['id'] ?? 0,
-            isIncome: _transactionType == 'Income',
-            accountId: 1,
-            notes: _descController.text,
-            isRecurring: _isRecurring,
-          );
+      if (transactionId != null && transactionId.isNotEmpty) {
+        // Update existing transaction
+        final transaction = Transaction(
+          id: transactionId,
+          description: _descController.text,
+          amount: amount,
+          currencyCode: currencyProvider.currentCurrencyCode,
+          date: _selectedDate,
+          category: _selectedCategory!,
+          categoryId: matchingCategory['id'] ?? 0,
+          isIncome: _transactionType == 'Income',
+          accountId: 1,
+          notes: _descController.text,
+          isRecurring: _isRecurring,
+        );
 
-          await transactionProvider.addTransaction(transaction);
-        } else {
-          final transaction = Transaction(
-            id: transactionId,
-            description: _descController.text,
-            amount: amount,
-            currencyCode: currencyProvider.currentCurrencyCode,
-            date: _selectedDate,
-            category: _selectedCategory!,
-            categoryId: matchingCategory['id'] ?? 0,
-            isIncome: _transactionType == 'Income',
-            accountId: 1,
-            notes: _descController.text,
-            isRecurring: _isRecurring,
-          );
-
-          await transactionProvider.updateTransaction(transaction);
-        }
-        if (!mounted) return;
-        Navigator.pop(context);
+        await transactionProvider.updateTransaction(transaction);
       } else {
-        // Add new transaction to Firestore
+        // Add new transaction (even if we have pre-filled data like from SMS)
         final transaction = Transaction(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           description: _descController.text,
@@ -815,9 +787,10 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         );
 
         await transactionProvider.addTransaction(transaction);
-        if (!mounted) return;
-        Navigator.pop(context);
       }
+
+      if (!mounted) return;
+      Navigator.pop(context);
     } catch (e) {
       // Show error in UI, not just terminal
       if (mounted) {

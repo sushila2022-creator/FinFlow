@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:finflow/models/category.dart';
 import 'package:finflow/providers/db_provider.dart';
 import 'package:finflow/utils/utility.dart' as utility;
+import 'package:finflow/utils/app_theme.dart';
 
 class ManageCategoriesScreen extends StatefulWidget {
   const ManageCategoriesScreen({super.key});
@@ -178,7 +179,7 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Manage Categories'),
-        backgroundColor: const Color(0xFF0A2540),
+        backgroundColor: AppTheme.primaryColor,
         foregroundColor: Colors.white,
       ),
       body: _isLoading
@@ -200,7 +201,7 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: _addCategory,
         tooltip: 'Add Category',
-        backgroundColor: const Color(0xFF0A2540),
+        backgroundColor: AppTheme.primaryColor,
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );

@@ -117,10 +117,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
                     child: Padding(
                       padding: EdgeInsets.all(24.0),
                       child: Center(child: CircularProgressIndicator()),
@@ -128,10 +124,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   );
                 } else if (snapshot.hasError) {
                   return Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(24.0),
                       child: Column(
@@ -147,10 +139,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   );
                 } else if (!snapshot.hasData || snapshot.data == null) {
                   return Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(24.0),
                       child: Column(
@@ -169,10 +157,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   final name = userData['name'] ?? 'No name';
                   final email = userData['email'] ?? 'No email';
                   return Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(24.0),
                       child: Column(
