@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:finflow/providers/transaction_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
@@ -15,22 +16,51 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
-  int _selectedTabIndex = 0; // Today is selected by default
-  bool _showExpenses = true; // Toggle between Expenses and Income
+  int _selectedTabIndex = 0;
+  bool _showExpenses = true;
+  int _selectedCategoryIndex = -1;
   final List<String> _tabLabels = ['Today', 'Week', 'Month', 'Year'];
-
-  // SINGLE SOURCE OF TRUTH: Current selected period
-  DateTime _selectedPeriod = DateTime.now();
+  DateTime _selectedStartDate = DateTime.now();
+  DateTime _selectedEndDate = DateTime.now();
+  DateTime _currentMonth = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    _selectedPeriod = DateTime.now();
+    _updateDateRangeForTab(_selectedTabIndex);
   }
 
-  // Color palette matching Dashboard's Deep Navy (#0D2B45) and Emerald (#006D5B)
-  static const Color primaryNavy = AppTheme.primaryColor;
-  static const Color accentEmerald = AppTheme.incomeColor;
+  void _updateDateRangeForTab(int tabIndex) {
+    final now = DateTime.now();
+    switch (tabIndex) {
+      case 0: // Today
+        _selectedStartDate = DateTime(now.year, now.month, now.day);
+        _selectedEndDate = _selectedStartDate;
+        break;
+      case 1: // Week
+        final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+        _selectedStartDate = startOfWeek;
+        _selectedEndDate = startOfWeek.add(const Duration(days: 6));
+        break;
+      case 2: // Month
+        _selectedStartDate = DateTime(now.year, now.month, 1);
+        _selectedEndDate = DateTime(now.year, now.month + 1, 0);
+        _currentMonth = _selectedStartDate;
+        break;
+      case 3: // Year
+        _selectedStartDate = DateTime(now.year, 1, 1);
+        _selectedEndDate = DateTime(now.year, 12, 31);
+        break;
+    }
+  }
+
+  void _updateSelectedDateRange(DateTime startDate, DateTime endDate) {
+    setState(() {
+      _selectedStartDate = startDate;
+      _selectedEndDate = endDate;
+      _currentMonth = startDate;
+    });
+  }
 
   Map<String, double> _computeCategoryData(
     List<Transaction> transactions,
@@ -52,89 +82,40 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return categoryData;
   }
 
-  List<double> _getWeeklySpendingData(List<Transaction> transactions) {
-    // Group by week of month (4 weeks)
-    final List<double> weeklyTotals = List.filled(4, 0.0);
-
-    for (var transaction in transactions) {
-      if (!transaction.isIncome) {
-        // Only expenses
-        final weekOfMonth = ((transaction.date.day - 1) ~/ 7).clamp(0, 3);
-        weeklyTotals[weekOfMonth] += transaction.amount.abs();
-      }
-    }
-
-    return weeklyTotals;
-  }
-
-  List<double> _getDailySpendingData(List<Transaction> transactions) {
-    // Group by day of week (7 days)
-    final List<double> dailyTotals = List.filled(7, 0.0);
-
-    for (var transaction in transactions) {
-      if (!transaction.isIncome) {
-        // Only expenses
-        final dayOfWeek = transaction.date.weekday - 1; // 0-6 for Mon-Sun
-        dailyTotals[dayOfWeek] += transaction.amount.abs();
-      }
-    }
-
-    return dailyTotals;
-  }
-
-  List<double> _getMonthlySpendingData(List<Transaction> transactions) {
-    // Group by month (12 months)
-    final List<double> monthlyTotals = List.filled(12, 0.0);
-
-    for (var transaction in transactions) {
-      if (!transaction.isIncome) {
-        // Only expenses
-        final monthIndex = transaction.date.month - 1; // 0-11 for Jan-Dec
-        monthlyTotals[monthIndex] += transaction.amount.abs();
-      }
-    }
-
-    return monthlyTotals;
-  }
-
-  List<double> _getYearlySpendingData(List<Transaction> transactions) {
-    // Group by year (last 5 years)
-    final List<double> yearlyTotals = List.filled(5, 0.0);
-    final currentYear = _selectedPeriod.year;
-
-    for (var transaction in transactions) {
-      if (!transaction.isIncome) {
-        // Only expenses
-        final yearDiff = currentYear - transaction.date.year;
-        if (yearDiff >= 0 && yearDiff < 5) {
-          yearlyTotals[yearDiff] += transaction.amount.abs();
-        }
-      }
-    }
-
-    return yearlyTotals;
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: const Color(0xFF0D2B45),
-        title: Text(
-          'Analytics',
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-            letterSpacing: -0.5,
-          ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Analytics',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              _getDateRangeDisplay(),
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Colors.white.withValues(alpha: 0.8),
+              ),
+            ),
+          ],
         ),
         actions: [
           GestureDetector(
-            onTap: () => _showMonthYearPicker(),
+            onTap: () => _showDateRangePicker(),
             child: Container(
               margin: const EdgeInsets.only(right: 16),
               padding: const EdgeInsets.all(10),
@@ -150,7 +131,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   ),
                 ],
               ),
-              child: Icon(Icons.calendar_today, size: 22, color: primaryNavy),
+              child: Icon(
+                Icons.calendar_today,
+                size: 22,
+                color: AppTheme.primaryColor,
+              ),
             ),
           ),
         ],
@@ -178,12 +163,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               (sum, amount) => sum + amount,
             );
 
-            // Get data for bar chart based on selected tab
-            final chartData = _getChartDataForTab(
-              filteredTransactions,
-              _selectedTabIndex,
-            );
-
             return Column(
               children: [
                 // Tab Bar
@@ -207,8 +186,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
                           const SizedBox(height: 16),
 
-                          // Bar Chart (Dynamic based on selected tab)
-                          _buildBarChart(chartData, isDarkMode),
+                          // Pie Chart (Category breakdown)
+                          _buildPieChart(selectedData, isDarkMode),
+
+                          const SizedBox(height: 24),
+
+                          // Summary Section (Net Balance Only)
+                          _buildSummarySection(
+                            filteredTransactions,
+                            currencySymbol,
+                            isDarkMode,
+                          ),
 
                           const SizedBox(height: 24),
 
@@ -239,7 +227,43 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  Future<void> _showMonthYearPicker() async {
+  List<Transaction> _filterTransactionsByTab(
+    List<Transaction> transactions,
+    int tabIndex,
+  ) {
+    // Update date range when switching tabs (only for predefined tabs)
+    if (tabIndex >= 0) {
+      _updateDateRangeForTab(tabIndex);
+    }
+
+    return transactions.where((transaction) {
+      // Check if transaction date is within the selected date range
+      final transactionDate = DateTime(
+        transaction.date.year,
+        transaction.date.month,
+        transaction.date.day,
+      );
+      final startDate = DateTime(
+        _selectedStartDate.year,
+        _selectedStartDate.month,
+        _selectedStartDate.day,
+      );
+      final endDate = DateTime(
+        _selectedEndDate.year,
+        _selectedEndDate.month,
+        _selectedEndDate.day,
+      );
+
+      return transactionDate.isAtSameMomentAs(startDate) ||
+          (transactionDate.isAfter(
+                startDate.subtract(const Duration(days: 1)),
+              ) &&
+              transactionDate.isBefore(endDate.add(const Duration(days: 1))));
+    }).toList();
+  }
+
+  // New method to handle date range selection
+  Future<void> _showDateRangePicker() async {
     final isDarkMode = Provider.of<ThemeProvider>(
       context,
       listen: false,
@@ -253,7 +277,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         builder: (context, setState) {
           final now = DateTime.now();
           final currentYear = now.year;
-          final years = List.generate(11, (index) => currentYear - 5 + index);
+
+          // Extended year range: from 100 years ago to 100 years in the future
+          final years = List.generate(
+            201,
+            (index) => currentYear - 100 + index,
+          );
           final months = [
             'Jan',
             'Feb',
@@ -270,16 +299,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ];
 
           // Use local state for picker selection
-          int selectedYear = _selectedPeriod.year;
-          int selectedMonth = _selectedPeriod.month;
+          int selectedYear = _currentMonth.year;
+          int selectedMonth = _currentMonth.month;
 
           return Container(
             constraints: BoxConstraints(
-              maxHeight:
-                  MediaQuery.of(context).size.height * 0.6, // 40% reduction
+              maxHeight: MediaQuery.of(context).size.height * 0.8,
             ),
             decoration: BoxDecoration(
-              color: isDarkMode ? primaryNavy : Colors.white,
+              color: isDarkMode ? AppTheme.primaryColor : Colors.white,
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(28),
               ),
@@ -312,98 +340,161 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Select Month & Year',
+                        'Select Date Range',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
-                          color: isDarkMode ? Colors.white : primaryNavy,
+                          color: isDarkMode
+                              ? Colors.white
+                              : AppTheme.primaryColor,
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            selectedYear = currentYear;
-                            selectedMonth = now.month;
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: accentEmerald.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'Today',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: accentEmerald,
+                      Row(
+                        children: [
+                          // Previous Year Button
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedYear = selectedYear - 1;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: isDarkMode
+                                    ? const Color(0xFF2D3A4D)
+                                    : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                Icons.arrow_back_ios_new,
+                                size: 16,
+                                color: isDarkMode
+                                    ? Colors.white
+                                    : AppTheme.primaryColor,
+                              ),
                             ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+
+                          // Today Button
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedYear = currentYear;
+                                selectedMonth = now.month;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppTheme.incomeColor.withValues(
+                                  alpha: 0.1,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'Today',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.incomeColor,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Next Year Button
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                selectedYear = selectedYear + 1;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: isDarkMode
+                                    ? const Color(0xFF2D3A4D)
+                                    : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                Icons.arrow_forward_ios,
+                                size: 16,
+                                color: isDarkMode
+                                    ? Colors.white
+                                    : AppTheme.primaryColor,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
 
-                // Year Grid (Compact)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 5, // Compact grid
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                          childAspectRatio: 1.8,
-                        ),
-                    itemCount: years.length,
-                    itemBuilder: (context, index) {
-                      final year = years[index];
-                      final isSelected = year == selectedYear;
-
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            selectedYear = year;
-                          });
-                        },
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? accentEmerald
-                                : (isDarkMode
-                                      ? const Color(0xFF1A2536)
-                                      : const Color(0xFFF1F5F9)),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isSelected
-                                  ? accentEmerald
-                                  : (isDarkMode
-                                        ? const Color(0xFF2D3A4D)
-                                        : const Color(0xFFE2E8F0)),
-                            ),
+                // Year Grid with Scroll
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: GridView.builder(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 5,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                            childAspectRatio: 1.8,
                           ),
-                          child: Center(
-                            child: Text(
-                              year.toString(),
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
+                      itemCount: years.length,
+                      itemBuilder: (context, index) {
+                        final year = years[index];
+                        final isSelected = year == selectedYear;
+
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              selectedYear = year;
+                            });
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? AppTheme.incomeColor
+                                  : (isDarkMode
+                                        ? const Color(0xFF1A2536)
+                                        : const Color(0xFFF1F5F9)),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
                                 color: isSelected
-                                    ? Colors.white
-                                    : (isDarkMode ? Colors.white : primaryNavy),
+                                    ? AppTheme.incomeColor
+                                    : (isDarkMode
+                                          ? const Color(0xFF2D3A4D)
+                                          : const Color(0xFFE2E8F0)),
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                year.toString(),
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : (isDarkMode
+                                            ? Colors.white
+                                            : AppTheme.primaryColor),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
 
@@ -431,14 +522,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           margin: const EdgeInsets.only(right: 8),
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? accentEmerald
+                                ? AppTheme.incomeColor
                                 : (isDarkMode
                                       ? const Color(0xFF1A2536)
                                       : const Color(0xFFF1F5F9)),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: isSelected
-                                  ? accentEmerald
+                                  ? AppTheme.incomeColor
                                   : (isDarkMode
                                         ? const Color(0xFF2D3A4D)
                                         : const Color(0xFFE2E8F0)),
@@ -456,7 +547,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                       ? Colors.white
                                       : (isDarkMode
                                             ? Colors.white
-                                            : primaryNavy),
+                                            : AppTheme.primaryColor),
                                 ),
                               ),
                               const SizedBox(height: 2),
@@ -471,7 +562,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                             ? Colors.white.withValues(
                                                 alpha: 0.7,
                                               )
-                                            : primaryNavy.withValues(
+                                            : AppTheme.primaryColor.withValues(
                                                 alpha: 0.7,
                                               )),
                                 ),
@@ -507,7 +598,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       Icon(
                         Icons.calendar_today,
                         size: 18,
-                        color: accentEmerald,
+                        color: AppTheme.incomeColor,
                       ),
                       const SizedBox(width: 12),
                       Text(
@@ -515,7 +606,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          color: isDarkMode ? Colors.white : primaryNavy,
+                          color: isDarkMode
+                              ? Colors.white
+                              : AppTheme.primaryColor,
                         ),
                       ),
                     ],
@@ -523,6 +616,92 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ),
 
                 const SizedBox(height: 24),
+
+                // Quick Actions
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    children: [
+                      // Last Month Button
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            setState(() {
+                              if (selectedMonth == 1) {
+                                selectedMonth = 12;
+                                selectedYear = selectedYear - 1;
+                              } else {
+                                selectedMonth = selectedMonth - 1;
+                              }
+                            });
+                          },
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            side: BorderSide(
+                              color: isDarkMode
+                                  ? const Color(0xFF404040)
+                                  : const Color(0xFFE2E8F0),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            'Last Month',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isDarkMode
+                                  ? const Color(0xFFB0B0B0)
+                                  : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(width: 8),
+
+                      // Next Month Button
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            setState(() {
+                              if (selectedMonth == 12) {
+                                selectedMonth = 1;
+                                selectedYear = selectedYear + 1;
+                              } else {
+                                selectedMonth = selectedMonth + 1;
+                              }
+                            });
+                          },
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            side: BorderSide(
+                              color: isDarkMode
+                                  ? const Color(0xFF404040)
+                                  : const Color(0xFFE2E8F0),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            'Next Month',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isDarkMode
+                                  ? const Color(0xFFB0B0B0)
+                                  : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
 
                 // Buttons
                 Padding(
@@ -566,23 +745,30 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                             Navigator.pop(context);
 
                             // Create new date from selection
-                            final newDate = DateTime(
+                            final newStartDate = DateTime(
                               selectedYear,
                               selectedMonth,
                               1,
                             );
+                            final newEndDate = DateTime(
+                              selectedYear,
+                              selectedMonth + 1,
+                              0,
+                            );
 
                             // Only update if selection actually changed
-                            // Only update if selection actually changed
-                            if (newDate != _selectedPeriod) {
+                            if (newStartDate != _currentMonth) {
                               // Update state immediately for instant UI feedback
                               setState(() {
-                                _selectedPeriod = newDate;
+                                _selectedStartDate = newStartDate;
+                                _selectedEndDate = newEndDate;
+                                _currentMonth = newStartDate;
+                                _selectedTabIndex = -1; // Custom selection
                               });
                             }
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: accentEmerald,
+                            backgroundColor: AppTheme.incomeColor,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
@@ -611,41 +797,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  List<Transaction> _filterTransactionsByTab(
-    List<Transaction> transactions,
-    int tabIndex,
-  ) {
-    // Update selectedPeriod to current date when switching to Today or Week tabs
-    if (tabIndex == 0 || tabIndex == 1) {
-      _selectedPeriod = DateTime.now();
-    }
-
-    final now = _selectedPeriod;
-    final today = DateTime(now.year, now.month, now.day);
-    final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
-
-    return transactions.where((transaction) {
-      switch (tabIndex) {
-        case 0: // Today
-          return transaction.date.day == today.day &&
-              transaction.date.month == today.month &&
-              transaction.date.year == today.year;
-        case 1: // Week
-          return transaction.date.isAfter(
-                startOfWeek.subtract(const Duration(days: 1)),
-              ) &&
-              transaction.date.isBefore(today.add(const Duration(days: 1)));
-        case 2: // Month
-          return transaction.date.month == now.month &&
-              transaction.date.year == now.year;
-        case 3: // Year
-          return transaction.date.year == now.year;
-        default:
-          return true;
-      }
-    }).toList();
-  }
-
   Widget _buildTabBar(bool isDarkMode) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -669,7 +820,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
                     color: _selectedTabIndex == index
-                        ? primaryNavy
+                        ? AppTheme.primaryColor
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: _selectedTabIndex == index
@@ -763,7 +914,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: _showExpenses
-                              ? primaryNavy
+                              ? AppTheme.primaryColor
                               : (isDarkMode
                                     ? const Color(0xFFB0B0B0)
                                     : const Color(0xFF64748B)),
@@ -801,7 +952,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         Icons.north_east,
                         size: 16,
                         color: !_showExpenses
-                            ? accentEmerald
+                            ? AppTheme.incomeColor
                             : (isDarkMode
                                   ? const Color(0xFFB0B0B0)
                                   : const Color(0xFF64748B)),
@@ -813,7 +964,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: !_showExpenses
-                              ? primaryNavy
+                              ? AppTheme.primaryColor
                               : (isDarkMode
                                     ? const Color(0xFFB0B0B0)
                                     : const Color(0xFF64748B)),
@@ -847,10 +998,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             Text(
               AppTheme.formatCurrency(totalAmount, symbol: currencySymbol),
               style: GoogleFonts.plusJakartaSans(
-                fontSize: 28, // Standardized to match Dashboard Balance
-                fontWeight: FontWeight.w900,
-                color: isDarkMode ? Colors.white : primaryNavy,
-                letterSpacing: -0.8,
+                fontSize: 16, // Reduced size for better balance
+                fontWeight: FontWeight.w700,
+                color: isDarkMode ? Colors.white : AppTheme.primaryColor,
+                letterSpacing: -0.4,
               ),
             ),
           ],
@@ -859,13 +1010,68 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  Widget _buildBarChart(List<double> chartData, bool isDarkMode) {
-    final maxValue = chartData.isNotEmpty
-        ? chartData.reduce((a, b) => a > b ? a : b)
-        : 1.0;
+  Widget _buildPieChart(Map<String, double> categoryData, bool isDarkMode) {
+    if (categoryData.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isDarkMode
+                ? const Color(0xFF2D2D2D)
+                : const Color(0xFFF1F5F9),
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.pie_chart_outline,
+              size: 48,
+              color: isDarkMode
+                  ? const Color(0xFFB0B0B0)
+                  : const Color(0xFF64748B),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No data available',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isDarkMode ? Colors.white : AppTheme.primaryColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Add transactions to see category breakdown',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                color: isDarkMode
+                    ? const Color(0xFFB0B0B0)
+                    : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
-    // Get labels based on current tab
-    final labels = _getChartLabels(_selectedTabIndex);
+    // Sort categories by amount (descending)
+    final sortedEntries = categoryData.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    // Get colors for each category
+    final colors = sortedEntries.map((entry) {
+      return AppTheme.getCategoryColor(entry.key, isIncome: !_showExpenses);
+    }).toList();
+
+    // Calculate total for percentages
+    final totalAmount = sortedEntries.fold(
+      0.0,
+      (sum, entry) => sum + entry.value,
+    );
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -875,151 +1081,136 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         border: Border.all(
           color: isDarkMode ? const Color(0xFF2D2D2D) : const Color(0xFFF1F5F9),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: isDarkMode
+                ? Colors.black.withValues(alpha: 0.2)
+                : Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(chartData.length, (index) {
-              final heightPercent = maxValue > 0
-                  ? (chartData[index] / maxValue)
-                  : 0.0;
-              final isHighlighted =
-                  index == (chartData.length ~/ 2); // Highlight middle bar
+          // Chart Title
+          Text(
+            _showExpenses ? 'Expense Breakdown' : 'Income Breakdown',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: isDarkMode ? Colors.white : AppTheme.primaryColor,
+            ),
+          ),
+          const SizedBox(height: 16),
 
-              return Expanded(
-                child: Column(
+          // Pie Chart
+          AspectRatio(
+            aspectRatio: 1.2,
+            child: PieChart(
+              PieChartData(
+                pieTouchData: PieTouchData(
+                  touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                    setState(() {
+                      if (!event.isInterestedForInteractions ||
+                          pieTouchResponse == null ||
+                          pieTouchResponse.touchedSection == null) {
+                        _selectedCategoryIndex = -1;
+                        return;
+                      }
+                      _selectedCategoryIndex =
+                          pieTouchResponse.touchedSection!.touchedSectionIndex;
+                    });
+                  },
+                ),
+                borderData: FlBorderData(show: false),
+                sectionsSpace: 2,
+                centerSpaceRadius: 40,
+                sections: List.generate(sortedEntries.length, (index) {
+                  final entry = sortedEntries[index];
+
+                  return PieChartSectionData(
+                    color: colors[index],
+                    value: entry.value,
+                    title: '',
+                    radius: 20,
+                    titleStyle: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                    titlePositionPercentageOffset: 0.55,
+                    borderSide: BorderSide(
+                      color: _selectedCategoryIndex == index
+                          ? Colors.white
+                          : colors[index].withValues(alpha: 0),
+                      width: _selectedCategoryIndex == index ? 3 : 0,
+                    ),
+                    showTitle: false,
+                  );
+                }),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Legend
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: sortedEntries.map((entry) {
+              final index = sortedEntries.indexOf(entry);
+
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedCategoryIndex = index;
+                  });
+                },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Bar Container
                     Container(
-                      height: 120,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Stack(
-                        alignment: Alignment.bottomCenter,
-                        children: [
-                          // Background
-                          Container(
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: isDarkMode
-                                  ? const Color(0xFF2D2D2D)
-                                  : const Color(0xFFF1F5F9),
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(6),
-                              ),
-                            ),
-                          ),
-
-                          // Bar
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 600),
-                            curve: Curves.easeOut,
-                            height: 120 * heightPercent,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: accentEmerald.withValues(
-                                alpha: isHighlighted
-                                    ? 1.0
-                                    : 0.3 + (heightPercent * 0.4),
-                              ),
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(6),
-                              ),
-                            ),
-                          ),
-
-                          // Highlight label on middle bar
-                          if (isHighlighted && chartData[index] > 0)
-                            Positioned(
-                              top: 8,
-                              left: 0,
-                              right: 0,
-                              child: Center(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: primaryNavy,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    AppTheme.formatCurrency(
-                                      chartData[index],
-                                      symbol: '₹',
-                                    ).replaceAll('.00', 'k'),
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: colors[index],
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: _selectedCategoryIndex == index
+                              ? Colors.white
+                              : colors[index].withValues(alpha: 0.3),
+                          width: 1,
+                        ),
                       ),
                     ),
-
-                    const SizedBox(height: 8),
-
-                    // Label
+                    const SizedBox(width: 6),
                     Text(
-                      labels[index],
+                      '${entry.key} • ${((entry.value / totalAmount) * 100).toStringAsFixed(1)}%',
                       style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: isHighlighted
-                            ? (isDarkMode ? accentEmerald : primaryNavy)
-                            : (isDarkMode
-                                  ? const Color(0xFFB0B0B0)
+                        fontSize: 12,
+                        fontWeight: _selectedCategoryIndex == index
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: isDarkMode
+                            ? (_selectedCategoryIndex == index
+                                  ? Colors.white
+                                  : const Color(0xFFB0B0B0))
+                            : (_selectedCategoryIndex == index
+                                  ? AppTheme.primaryColor
                                   : const Color(0xFF64748B)),
                       ),
                     ),
                   ],
                 ),
               );
-            }),
+            }).toList(),
           ),
         ],
       ),
     );
-  }
-
-  List<String> _getChartLabels(int tabIndex) {
-    switch (tabIndex) {
-      case 0: // Today - Day of week
-        return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      case 1: // Week - Week of month
-        return ['01-07', '08-14', '15-21', '22-28'];
-      case 2: // Month - Months of year
-        return [
-          'Jan',
-          'Feb',
-          'Mar',
-          'Apr',
-          'May',
-          'Jun',
-          'Jul',
-          'Aug',
-          'Sep',
-          'Oct',
-          'Nov',
-          'Dec',
-        ];
-      case 3: // Year - Last 5 years
-        final currentYear = _selectedPeriod.year;
-        return [
-          '${currentYear - 4}',
-          '${currentYear - 3}',
-          '${currentYear - 2}',
-          '${currentYear - 1}',
-          '$currentYear',
-        ];
-      default:
-        return ['01-07', '08-14', '15-21', '22-28'];
-    }
   }
 
   Widget _buildCategoryHeader(bool isDarkMode) {
@@ -1031,7 +1222,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           style: GoogleFonts.plusJakartaSans(
             fontSize: 18,
             fontWeight: FontWeight.w700,
-            color: isDarkMode ? Colors.white : primaryNavy,
+            color: isDarkMode ? Colors.white : AppTheme.primaryColor,
           ),
         ),
         GestureDetector(
@@ -1041,7 +1232,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             style: GoogleFonts.plusJakartaSans(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: accentEmerald,
+              color: AppTheme.incomeColor,
             ),
           ),
         ),
@@ -1077,7 +1268,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: isDarkMode ? Colors.white : primaryNavy,
+                color: isDarkMode ? Colors.white : AppTheme.primaryColor,
               ),
             ),
             const SizedBox(height: 4),
@@ -1100,12 +1291,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final sortedEntries = data.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
+    // Get colors for each category to match pie chart
+    final colors = sortedEntries.map((entry) {
+      return AppTheme.getCategoryColor(entry.key, isIncome: !_showExpenses);
+    }).toList();
+
     return Column(
       children: sortedEntries.map((entry) {
-        final percentage = totalAmount > 0
-            ? (entry.value / totalAmount) * 100
-            : 0;
-        final categoryColor = AppTheme.getCategoryColor(entry.key);
+        final index = sortedEntries.indexOf(entry);
+        final categoryColor = colors[index];
 
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
@@ -1118,20 +1312,44 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   ? const Color(0xFF2D2D2D)
                   : const Color(0xFFF1F5F9),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: isDarkMode
+                    ? Colors.black.withValues(alpha: 0.1)
+                    : Colors.black.withValues(alpha: 0.02),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Category Icon
+              // Category Color Indicator
               Container(
-                width: 40,
+                width: 8,
                 height: 40,
                 decoration: BoxDecoration(
+                  color: categoryColor,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(8),
+                    bottomLeft: Radius.circular(8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+
+              // Category Icon
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
                   color: categoryColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   AppTheme.getCategoryIcon(entry.key),
-                  size: 20,
+                  size: 18,
                   color: categoryColor,
                 ),
               ),
@@ -1141,18 +1359,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
                       entry.key,
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: isDarkMode ? Colors.white : primaryNavy,
+                        color: isDarkMode
+                            ? Colors.white
+                            : AppTheme.primaryColor,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${percentage.toStringAsFixed(1)}%',
+                      '${((entry.value / totalAmount) * 100).toStringAsFixed(1)}%',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         color: isDarkMode
@@ -1165,13 +1386,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ),
               ),
 
-              // Amount
-              Text(
-                AppTheme.formatCurrency(entry.value, symbol: currencySymbol),
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13, // Standardized to match Dashboard/Transactions
-                  fontWeight: FontWeight.w600,
-                  color: isDarkMode ? Colors.white : primaryNavy,
+              // Amount - Right-aligned and vertically centered
+              Container(
+                alignment: Alignment.centerRight,
+                constraints: const BoxConstraints(minWidth: 80),
+                child: Text(
+                  AppTheme.formatCurrency(entry.value, symbol: currencySymbol),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: isDarkMode ? Colors.white : AppTheme.primaryColor,
+                  ),
                 ),
               ),
             ],
@@ -1181,21 +1406,185 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  List<double> _getChartDataForTab(
-    List<Transaction> transactions,
-    int tabIndex,
+  Widget _buildSummaryRow(
+    String label,
+    double amount,
+    String currencySymbol,
+    Color iconColor,
+    IconData icon,
+    bool isDarkMode,
   ) {
-    switch (tabIndex) {
-      case 0: // Today
-        return _getDailySpendingData(transactions);
-      case 1: // Week
-        return _getWeeklySpendingData(transactions);
-      case 2: // Month
-        return _getMonthlySpendingData(transactions);
-      case 3: // Year
-        return _getYearlySpendingData(transactions);
+    final isPositive = amount >= 0;
+    final displayAmount = amount.abs();
+
+    return Row(
+      children: [
+        // Icon and Label
+        Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 16, color: iconColor),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isDarkMode ? Colors.white : AppTheme.primaryColor,
+              ),
+            ),
+          ],
+        ),
+
+        const Spacer(),
+
+        // Amount
+        Text(
+          '${isPositive ? '+' : '-'}${AppTheme.formatCurrency(displayAmount, symbol: currencySymbol)}',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: isPositive ? AppTheme.incomeColor : AppTheme.expenseColor,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _getPeriodLabel() {
+    final now = _currentMonth;
+    switch (_selectedTabIndex) {
+      case 0:
+        return 'Today';
+      case 1:
+        return 'This Week';
+      case 2:
+        return '${_getMonthName(now.month)} ${now.year}';
+      case 3:
+        return 'Year ${now.year}';
       default:
-        return List.filled(4, 0.0);
+        return 'Period';
     }
+  }
+
+  String _getMonthName(int month) {
+    final months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return months[month - 1];
+  }
+
+  String _getDateRangeDisplay() {
+    final now = _currentMonth;
+    switch (_selectedTabIndex) {
+      case 0:
+        return 'Today • ${_getMonthName(now.month)} ${now.day}, ${now.year}';
+      case 1:
+        final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+        final endOfWeek = startOfWeek.add(const Duration(days: 6));
+        return 'This Week • ${_getMonthName(startOfWeek.month)} ${startOfWeek.day} - ${_getMonthName(endOfWeek.month)} ${endOfWeek.day}';
+      case 2:
+        return '${_getMonthName(now.month)} ${now.year}';
+      case 3:
+        return 'Year ${now.year}';
+      default:
+        return '${_getMonthName(now.month)} ${now.year}';
+    }
+  }
+
+  Widget _buildSummarySection(
+    List<Transaction> filteredTransactions,
+    String currencySymbol,
+    bool isDarkMode,
+  ) {
+    // Get expenses and income data for the selected period
+    final expensesData = _computeCategoryData(
+      filteredTransactions,
+      false, // Expenses
+    );
+
+    final incomeData = _computeCategoryData(
+      filteredTransactions,
+      true, // Income
+    );
+
+    final totalExpenses = expensesData.values.fold(
+      0.0,
+      (sum, amount) => sum + amount,
+    );
+    final totalIncome = incomeData.values.fold(
+      0.0,
+      (sum, amount) => sum + amount,
+    );
+
+    final netBalance = totalIncome - totalExpenses;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDarkMode ? const Color(0xFF2D2D2D) : const Color(0xFFF1F5F9),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Summary',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: isDarkMode ? Colors.white : AppTheme.primaryColor,
+                ),
+              ),
+              Text(
+                _getPeriodLabel(),
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12,
+                  color: isDarkMode
+                      ? const Color(0xFFB0B0B0)
+                      : const Color(0xFF64748B),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Net Balance Row Only
+          _buildSummaryRow(
+            'Net Balance',
+            netBalance,
+            currencySymbol,
+            (netBalance) >= 0 ? AppTheme.incomeColor : AppTheme.expenseColor,
+            (netBalance) >= 0 ? Icons.north_east : Icons.south_west,
+            isDarkMode,
+          ),
+        ],
+      ),
+    );
   }
 }

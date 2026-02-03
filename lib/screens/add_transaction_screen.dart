@@ -212,6 +212,31 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       context,
       listen: false,
     ).isDarkMode;
+
+    // Create a proper theme for the date picker
+    final datePickerTheme = ThemeData(
+      colorScheme: ColorScheme.light(
+        primary: AppTheme.accentColor,
+        surface: Colors.white,
+        onPrimary: Colors.white,
+        onSurface: Colors.black,
+      ),
+      brightness: Brightness.light,
+      textTheme: const TextTheme(bodyMedium: TextStyle(color: Colors.black)),
+      dialogTheme: const DialogThemeData(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+        ),
+      ),
+      datePickerTheme: const DatePickerThemeData(
+        headerBackgroundColor: AppTheme.accentColor,
+        headerForegroundColor: Colors.white,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+      ),
+    );
+
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
@@ -219,14 +244,31 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       lastDate: DateTime.now(),
       builder: (context, child) {
         return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.dark(
-              primary: AppTheme.accentColor,
-              surface: isDarkMode
-                  ? AppTheme.surfaceDark
-                  : AppTheme.surfaceLight,
-            ),
-          ),
+          data: isDarkMode
+              ? datePickerTheme
+              : Theme.of(context).copyWith(
+                  colorScheme: ColorScheme.light(
+                    primary: AppTheme.accentColor,
+                    surface: Colors.white,
+                    onPrimary: Colors.white,
+                    onSurface: Colors.black,
+                  ),
+                  textTheme: const TextTheme(
+                    bodyMedium: TextStyle(color: Colors.black),
+                  ),
+                  dialogTheme: const DialogThemeData(
+                    backgroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(16)),
+                    ),
+                  ),
+                  datePickerTheme: const DatePickerThemeData(
+                    headerBackgroundColor: AppTheme.accentColor,
+                    headerForegroundColor: Colors.white,
+                    backgroundColor: Colors.white,
+                    surfaceTintColor: Colors.white,
+                  ),
+                ),
           child: child!,
         );
       },
