@@ -1,7 +1,8 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:finflow/providers/transaction_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
@@ -18,16 +19,25 @@ class AnalyticsScreen extends StatefulWidget {
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   int _selectedTabIndex = 0;
   bool _showExpenses = true;
-  int _selectedCategoryIndex = -1;
   final List<String> _tabLabels = ['Today', 'Week', 'Month', 'Year'];
   DateTime _selectedStartDate = DateTime.now();
   DateTime _selectedEndDate = DateTime.now();
-  DateTime _currentMonth = DateTime.now();
+
+  // Caching and debouncing
+  final Map<String, Map<String, double>> _cachedCategoryData = {};
+  Timer? _debounceTimer;
+  static const Duration _debounceDuration = Duration(milliseconds: 300);
 
   @override
   void initState() {
     super.initState();
     _updateDateRangeForTab(_selectedTabIndex);
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    super.dispose();
   }
 
   void _updateDateRangeForTab(int tabIndex) {
@@ -45,7 +55,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       case 2: // Month
         _selectedStartDate = DateTime(now.year, now.month, 1);
         _selectedEndDate = DateTime(now.year, now.month + 1, 0);
-        _currentMonth = _selectedStartDate;
         break;
       case 3: // Year
         _selectedStartDate = DateTime(now.year, 1, 1);
@@ -54,22 +63,26 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     }
   }
 
-  void _updateSelectedDateRange(DateTime startDate, DateTime endDate) {
-    setState(() {
-      _selectedStartDate = startDate;
-      _selectedEndDate = endDate;
-      _currentMonth = startDate;
-    });
-  }
-
   Map<String, double> _computeCategoryData(
     List<Transaction> transactions,
     bool isIncome,
   ) {
+    // Create cache key based on filter parameters
+    final cacheKey = _createCacheKey(transactions, isIncome);
+
+    // Check if we have cached data
+    if (_cachedCategoryData.containsKey(cacheKey)) {
+      return _cachedCategoryData[cacheKey]!;
+    }
+
+    // Compute new data with optimized filtering
     final Map<String, double> categoryData = {};
-    for (var transaction in transactions) {
-      if ((isIncome && transaction.isIncome) ||
-          (!isIncome && !transaction.isIncome)) {
+    final targetIsIncome = isIncome;
+
+    // Use for loop for better performance than where().fold()
+    for (var i = 0; i < transactions.length; i++) {
+      final transaction = transactions[i];
+      if (transaction.isIncome == targetIsIncome) {
         final category = transaction.categoryName;
         final amount = transaction.amount.abs();
         categoryData.update(
@@ -79,7 +92,45 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         );
       }
     }
+
+    // Cache the result
+    _cachedCategoryData[cacheKey] = categoryData;
+
+    // Limit cache size to prevent memory issues
+    if (_cachedCategoryData.length > 25) {
+      // Remove oldest entries when cache gets too large
+      final keysToRemove = _cachedCategoryData.keys.take(5).toList();
+      for (final key in keysToRemove) {
+        _cachedCategoryData.remove(key);
+      }
+    }
+
     return categoryData;
+  }
+
+  String _createCacheKey(List<Transaction> transactions, bool isIncome) {
+    // Create a unique key based on the filter parameters
+    // Use more specific parameters for better cache hit rate
+    final transactionCount = transactions.length;
+    final lastTransactionDate = transactions.isNotEmpty
+        ? transactions.last.date.toIso8601String()
+        : 'empty';
+    final filterType = isIncome ? 'income' : 'expenses';
+    final dateRange =
+        '${_selectedStartDate.toIso8601String()}-${_selectedEndDate.toIso8601String()}';
+    final tabIndex = _selectedTabIndex;
+
+    // Include more specific parameters for better cache accuracy
+    return '$transactionCount-$lastTransactionDate-$filterType-$dateRange-$tabIndex-${transactions.isNotEmpty ? transactions.first.id : 'no-transactions'}';
+  }
+
+  void _debouncedUpdateTab(int tabIndex) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(_debounceDuration, () {
+      setState(() {
+        _selectedTabIndex = tabIndex;
+      });
+    });
   }
 
   @override
@@ -113,32 +164,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             ),
           ],
         ),
-        actions: [
-          GestureDetector(
-            onTap: () => _showDateRangePicker(),
-            child: Container(
-              margin: const EdgeInsets.only(right: 16),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.primaryColor.withValues(alpha: 0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Icon(
-                Icons.calendar_today,
-                size: 22,
-                color: AppTheme.primaryColor,
-              ),
-            ),
-          ),
-        ],
       ),
       body: SafeArea(
         child: Consumer2<TransactionProvider, CurrencyProvider>(
@@ -186,9 +211,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
                           const SizedBox(height: 16),
 
-                          // Pie Chart (Category breakdown)
-                          _buildPieChart(selectedData, isDarkMode),
-
                           const SizedBox(height: 24),
 
                           // Summary Section (Net Balance Only)
@@ -202,6 +224,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
                           // Spending by Category Header
                           _buildCategoryHeader(isDarkMode),
+
+                          const SizedBox(height: 12),
+
+                          // Pie Chart
+                          _buildPieChart(selectedData, totalAmount, isDarkMode),
 
                           const SizedBox(height: 12),
 
@@ -262,541 +289,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     }).toList();
   }
 
-  // New method to handle date range selection
-  Future<void> _showDateRangePicker() async {
-    final isDarkMode = Provider.of<ThemeProvider>(
-      context,
-      listen: false,
-    ).isDarkMode;
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          final now = DateTime.now();
-          final currentYear = now.year;
-
-          // Extended year range: from 100 years ago to 100 years in the future
-          final years = List.generate(
-            201,
-            (index) => currentYear - 100 + index,
-          );
-          final months = [
-            'Jan',
-            'Feb',
-            'Mar',
-            'Apr',
-            'May',
-            'Jun',
-            'Jul',
-            'Aug',
-            'Sep',
-            'Oct',
-            'Nov',
-            'Dec',
-          ];
-
-          // Use local state for picker selection
-          int selectedYear = _currentMonth.year;
-          int selectedMonth = _currentMonth.month;
-
-          return Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.8,
-            ),
-            decoration: BoxDecoration(
-              color: isDarkMode ? AppTheme.primaryColor : Colors.white,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(28),
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Drag handle
-                Center(
-                  child: Container(
-                    width: 48,
-                    height: 4,
-                    margin: const EdgeInsets.only(top: 12, bottom: 8),
-                    decoration: BoxDecoration(
-                      color: isDarkMode
-                          ? const Color(0xFF404040)
-                          : const Color(0xFFE2E8F0),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-
-                // Header
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Select Date Range',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: isDarkMode
-                              ? Colors.white
-                              : AppTheme.primaryColor,
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          // Previous Year Button
-                          GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                selectedYear = selectedYear - 1;
-                              });
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: isDarkMode
-                                    ? const Color(0xFF2D3A4D)
-                                    : const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(
-                                Icons.arrow_back_ios_new,
-                                size: 16,
-                                color: isDarkMode
-                                    ? Colors.white
-                                    : AppTheme.primaryColor,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-
-                          // Today Button
-                          GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                selectedYear = currentYear;
-                                selectedMonth = now.month;
-                              });
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppTheme.incomeColor.withValues(
-                                  alpha: 0.1,
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'Today',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.incomeColor,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-
-                          // Next Year Button
-                          GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                selectedYear = selectedYear + 1;
-                              });
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: isDarkMode
-                                    ? const Color(0xFF2D3A4D)
-                                    : const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(
-                                Icons.arrow_forward_ios,
-                                size: 16,
-                                color: isDarkMode
-                                    ? Colors.white
-                                    : AppTheme.primaryColor,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Year Grid with Scroll
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: GridView.builder(
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 5,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
-                            childAspectRatio: 1.8,
-                          ),
-                      itemCount: years.length,
-                      itemBuilder: (context, index) {
-                        final year = years[index];
-                        final isSelected = year == selectedYear;
-
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              selectedYear = year;
-                            });
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? AppTheme.incomeColor
-                                  : (isDarkMode
-                                        ? const Color(0xFF1A2536)
-                                        : const Color(0xFFF1F5F9)),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isSelected
-                                    ? AppTheme.incomeColor
-                                    : (isDarkMode
-                                          ? const Color(0xFF2D3A4D)
-                                          : const Color(0xFFE2E8F0)),
-                              ),
-                            ),
-                            child: Center(
-                              child: Text(
-                                year.toString(),
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: isSelected
-                                      ? Colors.white
-                                      : (isDarkMode
-                                            ? Colors.white
-                                            : AppTheme.primaryColor),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // Month Horizontal Scroll
-                SizedBox(
-                  height: 60,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: months.length,
-                    itemBuilder: (context, index) {
-                      final monthIndex = index + 1;
-                      final isSelected = monthIndex == selectedMonth;
-
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            selectedMonth = monthIndex;
-                          });
-                        },
-                        child: Container(
-                          width: 70,
-                          margin: const EdgeInsets.only(right: 8),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? AppTheme.incomeColor
-                                : (isDarkMode
-                                      ? const Color(0xFF1A2536)
-                                      : const Color(0xFFF1F5F9)),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isSelected
-                                  ? AppTheme.incomeColor
-                                  : (isDarkMode
-                                        ? const Color(0xFF2D3A4D)
-                                        : const Color(0xFFE2E8F0)),
-                            ),
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                months[index],
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: isSelected
-                                      ? Colors.white
-                                      : (isDarkMode
-                                            ? Colors.white
-                                            : AppTheme.primaryColor),
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                monthIndex.toString().padLeft(2, '0'),
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                  color: isSelected
-                                      ? Colors.white.withValues(alpha: 0.9)
-                                      : (isDarkMode
-                                            ? Colors.white.withValues(
-                                                alpha: 0.7,
-                                              )
-                                            : AppTheme.primaryColor.withValues(
-                                                alpha: 0.7,
-                                              )),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Selected Date Preview
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 24),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isDarkMode
-                        ? const Color(0xFF1A2536)
-                        : const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isDarkMode
-                          ? const Color(0xFF2D3A4D)
-                          : const Color(0xFFE2E8F0),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.calendar_today,
-                        size: 18,
-                        color: AppTheme.incomeColor,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        '${months[selectedMonth - 1]} $selectedYear',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: isDarkMode
-                              ? Colors.white
-                              : AppTheme.primaryColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Quick Actions
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
-                    children: [
-                      // Last Month Button
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            setState(() {
-                              if (selectedMonth == 1) {
-                                selectedMonth = 12;
-                                selectedYear = selectedYear - 1;
-                              } else {
-                                selectedMonth = selectedMonth - 1;
-                              }
-                            });
-                          },
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            side: BorderSide(
-                              color: isDarkMode
-                                  ? const Color(0xFF404040)
-                                  : const Color(0xFFE2E8F0),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: Text(
-                            'Last Month',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: isDarkMode
-                                  ? const Color(0xFFB0B0B0)
-                                  : const Color(0xFF64748B),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(width: 8),
-
-                      // Next Month Button
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            setState(() {
-                              if (selectedMonth == 12) {
-                                selectedMonth = 1;
-                                selectedYear = selectedYear + 1;
-                              } else {
-                                selectedMonth = selectedMonth + 1;
-                              }
-                            });
-                          },
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            side: BorderSide(
-                              color: isDarkMode
-                                  ? const Color(0xFF404040)
-                                  : const Color(0xFFE2E8F0),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: Text(
-                            'Next Month',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: isDarkMode
-                                  ? const Color(0xFFB0B0B0)
-                                  : const Color(0xFF64748B),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // Buttons
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
-                    children: [
-                      // Cancel Button
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            side: BorderSide(
-                              color: isDarkMode
-                                  ? const Color(0xFF404040)
-                                  : const Color(0xFFE2E8F0),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child: Text(
-                            'Cancel',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: isDarkMode
-                                  ? const Color(0xFFB0B0B0)
-                                  : const Color(0xFF64748B),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(width: 12),
-
-                      // Select Button
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-
-                            // Create new date from selection
-                            final newStartDate = DateTime(
-                              selectedYear,
-                              selectedMonth,
-                              1,
-                            );
-                            final newEndDate = DateTime(
-                              selectedYear,
-                              selectedMonth + 1,
-                              0,
-                            );
-
-                            // Only update if selection actually changed
-                            if (newStartDate != _currentMonth) {
-                              // Update state immediately for instant UI feedback
-                              setState(() {
-                                _selectedStartDate = newStartDate;
-                                _selectedEndDate = newEndDate;
-                                _currentMonth = newStartDate;
-                                _selectedTabIndex = -1; // Custom selection
-                              });
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.incomeColor,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child: Text(
-                            'Select',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 24),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   Widget _buildTabBar(bool isDarkMode) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -811,9 +303,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             return Expanded(
               child: GestureDetector(
                 onTap: () {
-                  setState(() {
-                    _selectedTabIndex = index;
-                  });
+                  _debouncedUpdateTab(index);
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
@@ -1007,209 +497,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ],
         ),
       ],
-    );
-  }
-
-  Widget _buildPieChart(Map<String, double> categoryData, bool isDarkMode) {
-    if (categoryData.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isDarkMode
-                ? const Color(0xFF2D2D2D)
-                : const Color(0xFFF1F5F9),
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.pie_chart_outline,
-              size: 48,
-              color: isDarkMode
-                  ? const Color(0xFFB0B0B0)
-                  : const Color(0xFF64748B),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'No data available',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDarkMode ? Colors.white : AppTheme.primaryColor,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Add transactions to see category breakdown',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 12,
-                color: isDarkMode
-                    ? const Color(0xFFB0B0B0)
-                    : const Color(0xFF64748B),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Sort categories by amount (descending)
-    final sortedEntries = categoryData.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    // Get colors for each category
-    final colors = sortedEntries.map((entry) {
-      return AppTheme.getCategoryColor(entry.key, isIncome: !_showExpenses);
-    }).toList();
-
-    // Calculate total for percentages
-    final totalAmount = sortedEntries.fold(
-      0.0,
-      (sum, entry) => sum + entry.value,
-    );
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDarkMode ? const Color(0xFF2D2D2D) : const Color(0xFFF1F5F9),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isDarkMode
-                ? Colors.black.withValues(alpha: 0.2)
-                : Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Chart Title
-          Text(
-            _showExpenses ? 'Expense Breakdown' : 'Income Breakdown',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: isDarkMode ? Colors.white : AppTheme.primaryColor,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Pie Chart
-          AspectRatio(
-            aspectRatio: 1.2,
-            child: PieChart(
-              PieChartData(
-                pieTouchData: PieTouchData(
-                  touchCallback: (FlTouchEvent event, pieTouchResponse) {
-                    setState(() {
-                      if (!event.isInterestedForInteractions ||
-                          pieTouchResponse == null ||
-                          pieTouchResponse.touchedSection == null) {
-                        _selectedCategoryIndex = -1;
-                        return;
-                      }
-                      _selectedCategoryIndex =
-                          pieTouchResponse.touchedSection!.touchedSectionIndex;
-                    });
-                  },
-                ),
-                borderData: FlBorderData(show: false),
-                sectionsSpace: 2,
-                centerSpaceRadius: 40,
-                sections: List.generate(sortedEntries.length, (index) {
-                  final entry = sortedEntries[index];
-
-                  return PieChartSectionData(
-                    color: colors[index],
-                    value: entry.value,
-                    title: '',
-                    radius: 20,
-                    titleStyle: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                    titlePositionPercentageOffset: 0.55,
-                    borderSide: BorderSide(
-                      color: _selectedCategoryIndex == index
-                          ? Colors.white
-                          : colors[index].withValues(alpha: 0),
-                      width: _selectedCategoryIndex == index ? 3 : 0,
-                    ),
-                    showTitle: false,
-                  );
-                }),
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Legend
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: sortedEntries.map((entry) {
-              final index = sortedEntries.indexOf(entry);
-
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedCategoryIndex = index;
-                  });
-                },
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: colors[index],
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: _selectedCategoryIndex == index
-                              ? Colors.white
-                              : colors[index].withValues(alpha: 0.3),
-                          width: 1,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${entry.key} • ${((entry.value / totalAmount) * 100).toStringAsFixed(1)}%',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: _selectedCategoryIndex == index
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                        color: isDarkMode
-                            ? (_selectedCategoryIndex == index
-                                  ? Colors.white
-                                  : const Color(0xFFB0B0B0))
-                            : (_selectedCategoryIndex == index
-                                  ? AppTheme.primaryColor
-                                  : const Color(0xFF64748B)),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1459,7 +746,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   String _getPeriodLabel() {
-    final now = _currentMonth;
+    final now = DateTime.now();
     switch (_selectedTabIndex) {
       case 0:
         return 'Today';
@@ -1493,7 +780,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   String _getDateRangeDisplay() {
-    final now = _currentMonth;
+    final now = DateTime.now();
     switch (_selectedTabIndex) {
       case 0:
         return 'Today • ${_getMonthName(now.month)} ${now.day}, ${now.year}';
@@ -1508,6 +795,195 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       default:
         return '${_getMonthName(now.month)} ${now.year}';
     }
+  }
+
+  Widget _buildPieChart(
+    Map<String, double> data,
+    double totalAmount,
+    bool isDarkMode,
+  ) {
+    if (data.isEmpty) {
+      return Container(
+        height: 200,
+        decoration: BoxDecoration(
+          color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDarkMode
+                ? const Color(0xFF2D2D2D)
+                : const Color(0xFFF1F5F9),
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.pie_chart_outline,
+                size: 48,
+                color: isDarkMode
+                    ? const Color(0xFFB0B0B0)
+                    : const Color(0xFF64748B),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'No data to display',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  color: isDarkMode
+                      ? const Color(0xFFB0B0B0)
+                      : const Color(0xFF64748B),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Sort categories by amount (descending) and get colors
+    final sortedEntries = data.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final colors = sortedEntries.map((entry) {
+      return AppTheme.getCategoryColor(entry.key, isIncome: !_showExpenses);
+    }).toList();
+
+    return Container(
+      height: 280,
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDarkMode ? const Color(0xFF2D2D2D) : const Color(0xFFF1F5F9),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Chart Title
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _showExpenses
+                      ? 'Spending Distribution'
+                      : 'Income Distribution',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: isDarkMode ? Colors.white : AppTheme.primaryColor,
+                  ),
+                ),
+                Text(
+                  AppTheme.formatCurrency(totalAmount),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: isDarkMode ? Colors.white : AppTheme.primaryColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Pie Chart
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  // Chart Area
+                  Expanded(
+                    child: Center(
+                      child: Container(
+                        width: 160,
+                        height: 160,
+                        decoration: BoxDecoration(
+                          color: isDarkMode
+                              ? const Color(0xFF2D2D2D)
+                              : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(80),
+                          border: Border.all(
+                            color: isDarkMode
+                                ? const Color(0xFF404040)
+                                : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        child: CustomPaint(
+                          painter: _PieChartPainter(
+                            data: sortedEntries,
+                            colors: colors,
+                            totalAmount: totalAmount,
+                            isDarkMode: isDarkMode,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Legend
+                  Expanded(
+                    child: ListView.builder(
+                      padding: EdgeInsets.zero,
+                      itemCount: sortedEntries.length,
+                      itemBuilder: (context, index) {
+                        final entry = sortedEntries[index];
+                        final color = colors[index];
+                        final percentage = ((entry.value / totalAmount) * 100);
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  entry.key,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: isDarkMode
+                                        ? Colors.white
+                                        : AppTheme.primaryColor,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${percentage.toStringAsFixed(1)}%',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDarkMode
+                                      ? Colors.white
+                                      : AppTheme.primaryColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildSummarySection(
@@ -1587,4 +1063,66 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       ),
     );
   }
+}
+
+// Custom painter for the pie chart
+class _PieChartPainter extends CustomPainter {
+  final List<MapEntry<String, double>> data;
+  final List<Color> colors;
+  final double totalAmount;
+  final bool isDarkMode;
+
+  _PieChartPainter({
+    required this.data,
+    required this.colors,
+    required this.totalAmount,
+    required this.isDarkMode,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = min(size.width, size.height) / 2 - 10;
+
+    double startAngle = -pi / 2; // Start from top
+
+    for (int i = 0; i < data.length; i++) {
+      final entry = data[i];
+      final color = colors[i];
+      final sweepAngle = (entry.value / totalAmount) * 2 * pi;
+
+      final paint = Paint()
+        ..color = color
+        ..style = PaintingStyle.fill;
+
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        startAngle,
+        sweepAngle,
+        true,
+        paint,
+      );
+
+      startAngle += sweepAngle;
+    }
+
+    // Draw center circle for donut effect
+    final centerPaint = Paint()
+      ..color = isDarkMode ? const Color(0xFF1E1E1E) : Colors.white
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(center, radius * 0.6, centerPaint);
+
+    // Draw border
+    final borderPaint = Paint()
+      ..color = isDarkMode ? const Color(0xFF404040) : const Color(0xFFE2E8F0)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    canvas.drawCircle(center, radius, borderPaint);
+    canvas.drawCircle(center, radius * 0.6, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

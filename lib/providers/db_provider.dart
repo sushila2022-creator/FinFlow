@@ -21,7 +21,7 @@ class DBProvider {
     String path = join(documentsDirectory.path, "FinanceTracker.db");
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onOpen: (db) {},
       onCreate: (Database db, int version) async {
         await db.execute(
@@ -37,7 +37,10 @@ class DBProvider {
           "CREATE TABLE Category ("
           "id INTEGER PRIMARY KEY,"
           "name TEXT,"
-          "icon TEXT"
+          "icon TEXT,"
+          "color TEXT,"
+          "type TEXT,"
+          "budget_limit REAL"
           ")",
         );
 
@@ -65,6 +68,14 @@ class DBProvider {
           "endDate INTEGER"
           ")",
         );
+      },
+      onUpgrade: (Database db, int oldVersion, int newVersion) async {
+        if (oldVersion < 2) {
+          // Add new columns to Category table
+          await db.execute("ALTER TABLE Category ADD COLUMN color TEXT");
+          await db.execute("ALTER TABLE Category ADD COLUMN type TEXT");
+          await db.execute("ALTER TABLE Category ADD COLUMN budget_limit REAL");
+        }
       },
     );
   }

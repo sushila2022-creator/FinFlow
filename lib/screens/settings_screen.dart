@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:finflow/services/auth/local_auth_service.dart';
+import 'package:finflow/services/auth/google_auth_service.dart';
 import 'package:finflow/screens/manage_categories_screen.dart';
 import 'package:finflow/screens/welcome_screen.dart';
 import 'package:finflow/utils/database_helper.dart';
@@ -42,6 +43,7 @@ class SettingsScreenState extends State<SettingsScreen> {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
   bool _isBackupInProgress = false;
   bool _isRestoreInProgress = false;
+  final GoogleAuthService _googleAuthService = GoogleAuthService();
 
   @override
   void initState() {
@@ -551,6 +553,9 @@ class SettingsScreenState extends State<SettingsScreen> {
               },
             ], isDarkMode),
             const SizedBox(height: 16),
+            _buildSectionHeader('Google Account', isDarkMode),
+            _buildGoogleSection(isDarkMode),
+            const SizedBox(height: 16),
             _buildSectionHeader('Support & About', isDarkMode),
             _buildSection([
               {
@@ -558,14 +563,16 @@ class SettingsScreenState extends State<SettingsScreen> {
                 'title': 'Privacy Policy',
                 'onTap': () async {
                   try {
-                    await launchUrl(Uri.parse('https://www.google.com'));
+                    await launchUrl(
+                      Uri.parse('https://finflow-privacy-policy.com'),
+                    );
                   } catch (e) {
                     if (!mounted) return;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Could not launch link'),
+                            content: Text('Could not launch privacy policy'),
                           ),
                         );
                       }
@@ -578,16 +585,26 @@ class SettingsScreenState extends State<SettingsScreen> {
                 'title': 'Rate Us',
                 'onTap': () async {
                   try {
-                    await launchUrl(
-                      Uri.parse('market://details?id=com.example.finflow'),
-                    );
+                    // Try to open Google Play Store first
+                    final playStoreUrl = 'market://details?id=com.finflow.app';
+                    if (await canLaunchUrl(Uri.parse(playStoreUrl))) {
+                      await launchUrl(Uri.parse(playStoreUrl));
+                    } else {
+                      // Fallback to web URL if Play Store is not available
+                      final webUrl =
+                          'https://play.google.com/store/apps/details?id=com.finflow.app';
+                      await launchUrl(Uri.parse(webUrl));
+                    }
                   } catch (e) {
                     if (!mounted) return;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Could not launch link'),
+                          SnackBar(
+                            content: Text(
+                              'Could not open rating page: ${e.toString()}',
+                            ),
+                            backgroundColor: Colors.red,
                           ),
                         );
                       }
@@ -863,6 +880,148 @@ class SettingsScreenState extends State<SettingsScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildGoogleSection(bool isDarkMode) {
+    final currentUser = _googleAuthService.getCurrentGoogleUser();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            ListTile(
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 4,
+              ),
+              splashColor: Colors.transparent,
+              leading: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4285F4),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(Icons.g_mobiledata, color: Colors.white),
+              ),
+              title: Text(
+                currentUser != null
+                    ? 'Connected to Google'
+                    : 'Connect to Google',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: isDarkMode
+                      ? AppTheme.textPrimaryDark
+                      : AppTheme.textPrimaryLight,
+                ),
+              ),
+              subtitle: currentUser != null
+                  ? Text(
+                      currentUser.email,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10,
+                        color: isDarkMode
+                            ? AppTheme.textSecondaryDark
+                            : AppTheme.textSecondaryLight,
+                      ),
+                    )
+                  : Text(
+                      'Sign in with Google to sync your data',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10,
+                        color: isDarkMode
+                            ? AppTheme.textSecondaryDark
+                            : AppTheme.textSecondaryLight,
+                      ),
+                    ),
+              trailing: currentUser != null
+                  ? ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                      ),
+                      onPressed: () async {
+                        await _googleAuthService.signOutFromGoogle();
+                        if (!mounted) return;
+                        setState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Disconnected from Google'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      },
+                      child: Text(
+                        'Disconnect',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    )
+                  : ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4285F4),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                      ),
+                      onPressed: () async {
+                        final user = await _googleAuthService.signInWithGoogle(
+                          context,
+                        );
+                        if (user != null && mounted) {
+                          setState(() {});
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Connected to Google as ${user.email}',
+                              ),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      },
+                      child: Text(
+                        'Connect',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

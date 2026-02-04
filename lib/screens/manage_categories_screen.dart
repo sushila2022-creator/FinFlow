@@ -156,6 +156,7 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
           icon: result['icon']!,
           color: '2196F3', // Default blue color
           type: result['type']!,
+          budgetLimit: 0.0, // Default budget limit
         );
 
         await _dbProvider.newCategory(newCategory);

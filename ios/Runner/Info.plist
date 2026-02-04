@@ -53,5 +53,14 @@
 		<string>This app needs access to the photo library to select pictures of receipts.</string>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<!-- Full screen configuration -->
+		<key>UIStatusBarStyle</key>
+		<string>UIStatusBarStyleLightContent</string>
+		<key>UIViewControllerBasedStatusBarAppearance</key>
+		<false/>
+		<key>UIRequiresFullScreen</key>
+		<true/>
+		<key>UIApplicationSupportsIndirectInputEvents</key>
+		<true/>
 	</dict>
 </plist>

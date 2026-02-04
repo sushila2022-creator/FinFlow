@@ -55,83 +55,84 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     });
   }
 
+  Widget _buildSearchField() {
+    if (!_isSearchExpanded) {
+      return Text(
+        'Transactions',
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+        ),
+      );
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        height: 36,
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white, width: 2),
+        ),
+        child: TextField(
+          controller: _searchController,
+          focusNode: _searchFocusNode,
+          autofocus: true,
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'PlusJakartaSans',
+          ),
+          cursorColor: Colors.black,
+          cursorWidth: 2,
+          keyboardType: TextInputType.text,
+          keyboardAppearance: Theme.of(context).brightness,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Search transactions...',
+            hintStyle: TextStyle(
+              color: Theme.of(context).hintColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              fontFamily: 'PlusJakartaSans',
+            ),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            errorBorder: InputBorder.none,
+            disabledBorder: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            prefixIcon: Icon(
+              Icons.search,
+              color: Theme.of(context).hintColor,
+              size: 20,
+            ),
+          ),
+          onChanged: (value) {
+            setState(() {
+              _searchQuery = value.toLowerCase();
+            });
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // AppBar always dark navy with white text/icons
     final appBarBgColor = AppTheme.primaryColor;
-    const appBarTextColor = Colors.white;
-    const searchBorderColor = Colors.white;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: appBarBgColor,
         elevation: 0,
-        title: _isSearchExpanded
-            ? Material(
-                color: Colors.transparent,
-                child: Container(
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: searchBorderColor, width: 2),
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    focusNode: _searchFocusNode,
-                    autofocus: true,
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'PlusJakartaSans',
-                    ),
-                    cursorColor: Colors.black,
-                    cursorWidth: 2,
-                    keyboardType: TextInputType.text,
-                    keyboardAppearance: Theme.of(context).brightness,
-                    textInputAction: TextInputAction.search,
-                    decoration: InputDecoration(
-                      hintText: 'Search transactions...',
-                      hintStyle: TextStyle(
-                        color: Theme.of(context).hintColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        fontFamily: 'PlusJakartaSans',
-                      ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      errorBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      prefixIcon: Icon(
-                        Icons.search,
-                        color: Theme.of(context).hintColor,
-                        size: 20,
-                      ),
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        _searchQuery = value.toLowerCase();
-                      });
-                    },
-                  ),
-                ),
-              )
-            : Text(
-                'Transactions',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: appBarTextColor,
-                ),
-              ),
+        title: _buildSearchField(),
         iconTheme: const IconThemeData(color: Colors.white),
         actionsIconTheme: const IconThemeData(color: Colors.white),
         actions: [
@@ -146,305 +147,330 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       ),
       body: Consumer2<TransactionProvider, CurrencyProvider>(
         builder: (context, transactionProvider, currencyProvider, child) {
-          final allTransactions =
-              transactionProvider.transactions
-                  .where((t) => true) // No filter, all transactions
-                  .toList()
-                ..sort((a, b) => b.date.compareTo(a.date));
-
-          // Filter transactions based on search query AND filter type
-          final transactions = allTransactions.where((transaction) {
-            // 1. Search Query Filter
-            final matchesQuery =
-                _searchQuery.isEmpty ||
-                transaction.description.toLowerCase().contains(_searchQuery) ||
-                transaction.categoryName.toLowerCase().contains(_searchQuery) ||
-                transaction.title.toLowerCase().contains(_searchQuery);
-
-            // 2. Type Filter (Income/Expense)
-            bool matchesType = true;
-            if (_filterType == 'Income') {
-              matchesType = transaction.isIncome;
-            } else if (_filterType == 'Expense') {
-              matchesType = !transaction.isIncome;
-            }
-
-            return matchesQuery && matchesType;
-          }).toList();
+          // Get and filter transactions
+          final filteredTransactions = _getFilteredTransactions(
+            transactionProvider.transactions,
+          );
 
           // Calculate monthly totals (independent of filter)
-          final now = DateTime.now();
-          final startOfMonth = DateTime(now.year, now.month, 1);
-          final monthlyTransactions = transactionProvider.transactions
-              .where(
-                (t) => t.date.isAfter(
-                  startOfMonth.subtract(const Duration(days: 1)),
-                ),
-              )
-              .toList();
-
-          final totalIncome = monthlyTransactions
-              .where((t) => t.isIncome)
-              .fold(0.0, (sum, t) => sum + t.amount);
-
-          final totalExpense = monthlyTransactions
-              .where((t) => !t.isIncome)
-              .fold(0.0, (sum, t) => sum + t.amount);
+          final monthlyTotals = _calculateMonthlyTotals(
+            transactionProvider.transactions,
+          );
 
           // Group transactions by date
-          final groupedTransactions = <String, List<Transaction>>{};
-          for (final transaction in transactions) {
-            final dateKey = DateFormat('yyyy-MM-dd').format(transaction.date);
-            if (groupedTransactions[dateKey] == null) {
-              groupedTransactions[dateKey] = [];
-            }
-            groupedTransactions[dateKey]!.add(transaction);
-          }
+          final groupedTransactions = _groupTransactionsByDate(
+            filteredTransactions,
+          );
 
           return Column(
             children: [
               // Header Summary (Interactive Toggle Buttons)
-              Container(
-                margin: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    // Income Toggle
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => _toggleFilter('Income'),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 16, // Smoother vertical padding
-                          ),
-                          decoration: BoxDecoration(
-                            color: _filterType == 'Income'
-                                ? AppTheme.incomeColor.withValues(alpha: 0.15)
-                                : Theme.of(context).cardColor,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: _filterType == 'Income'
-                                  ? AppTheme.incomeColor
-                                  : Colors.transparent,
-                              width: 1.5,
-                            ),
-                            boxShadow: _filterType == 'Income'
-                                ? []
-                                : [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.03,
-                                      ),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.incomeColor.withValues(
-                                        alpha: 0.1,
-                                      ),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.arrow_downward,
-                                      size: 14,
-                                      color: AppTheme.incomeColor,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Income',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 12,
-                                      color: const Color(0xFF64748B),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: currencyProvider
-                                          .currentCurrencySymbol,
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppTheme.incomeColor,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: totalIncome.toStringAsFixed(0),
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 20, // Full page emphasis
-                                        fontWeight: FontWeight.w800,
-                                        color: AppTheme.incomeColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    // Expense Toggle
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => _toggleFilter('Expense'),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _filterType == 'Expense'
-                                ? AppTheme.expenseColor.withValues(alpha: 0.15)
-                                : Theme.of(context).cardColor,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: _filterType == 'Expense'
-                                  ? AppTheme.expenseColor
-                                  : Colors.transparent,
-                              width: 1.5,
-                            ),
-                            boxShadow: _filterType == 'Expense'
-                                ? []
-                                : [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.03,
-                                      ),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.expenseColor.withValues(
-                                        alpha: 0.1,
-                                      ),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.arrow_upward,
-                                      size: 14,
-                                      color: AppTheme.expenseColor,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Expense',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 12,
-                                      color: const Color(0xFF64748B),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: currencyProvider
-                                          .currentCurrencySymbol,
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppTheme.expenseColor,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: totalExpense.toStringAsFixed(0),
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 20, // Full page emphasis
-                                        fontWeight: FontWeight.w800,
-                                        color: AppTheme.expenseColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              _buildSummaryCards(
+                monthlyTotals,
+                currencyProvider.currentCurrencySymbol,
               ),
               // Transactions List
-              // Transactions List
               Expanded(
-                child: transactions.isEmpty
+                child: filteredTransactions.isEmpty
                     ? _buildEmptyState()
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: groupedTransactions.keys.length,
-                        itemBuilder: (context, index) {
-                          final dateKey = groupedTransactions.keys.elementAt(
-                            index,
-                          );
-                          final dateTransactions =
-                              groupedTransactions[dateKey]!;
-                          final date = DateTime.parse(dateKey);
-
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Date Header
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 8,
-                                ),
-                                child: Text(
-                                  DateFormat('dd/MM').format(date),
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 11,
-                                    color: const Color(0xFF1A1A1A),
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                              // Transactions for this date
-                              ...dateTransactions.map(
-                                (transaction) => _buildTransactionCard(
-                                  transaction,
-                                  currencyProvider,
-                                ),
-                              ),
-                            ],
-                          );
-                        },
+                    : _buildTransactionsList(
+                        groupedTransactions,
+                        currencyProvider,
                       ),
               ),
             ],
           );
         },
       ),
+    );
+  }
+
+  // Helper methods for better code organization
+  List<Transaction> _getFilteredTransactions(
+    List<Transaction> allTransactions,
+  ) {
+    final sortedTransactions = allTransactions
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    return sortedTransactions.where((transaction) {
+      // Search Query Filter
+      final matchesQuery =
+          _searchQuery.isEmpty ||
+          transaction.description.toLowerCase().contains(_searchQuery) ||
+          transaction.categoryName.toLowerCase().contains(_searchQuery) ||
+          transaction.title.toLowerCase().contains(_searchQuery);
+
+      // Type Filter (Income/Expense)
+      bool matchesType = true;
+      if (_filterType == 'Income') {
+        matchesType = transaction.isIncome;
+      } else if (_filterType == 'Expense') {
+        matchesType = !transaction.isIncome;
+      }
+
+      return matchesQuery && matchesType;
+    }).toList();
+  }
+
+  Map<String, double> _calculateMonthlyTotals(List<Transaction> transactions) {
+    final now = DateTime.now();
+    final startOfMonth = DateTime(now.year, now.month, 1);
+    final monthlyTransactions = transactions
+        .where(
+          (t) => t.date.isAfter(startOfMonth.subtract(const Duration(days: 1))),
+        )
+        .toList();
+
+    final totalIncome = monthlyTransactions
+        .where((t) => t.isIncome)
+        .fold(0.0, (sum, t) => sum + t.amount);
+
+    final totalExpense = monthlyTransactions
+        .where((t) => !t.isIncome)
+        .fold(0.0, (sum, t) => sum + t.amount);
+
+    return {'income': totalIncome, 'expense': totalExpense};
+  }
+
+  Map<String, List<Transaction>> _groupTransactionsByDate(
+    List<Transaction> transactions,
+  ) {
+    final groupedTransactions = <String, List<Transaction>>{};
+
+    for (final transaction in transactions) {
+      final dateKey = DateFormat('yyyy-MM-dd').format(transaction.date);
+      if (groupedTransactions[dateKey] == null) {
+        groupedTransactions[dateKey] = [];
+      }
+      groupedTransactions[dateKey]!.add(transaction);
+    }
+
+    return groupedTransactions;
+  }
+
+  Widget _buildSummaryCards(
+    Map<String, double> monthlyTotals,
+    String currencySymbol,
+  ) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          // Income Toggle
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _toggleFilter('Income'),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: _filterType == 'Income'
+                      ? AppTheme.incomeColor.withValues(alpha: 0.15)
+                      : Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _filterType == 'Income'
+                        ? AppTheme.incomeColor
+                        : Colors.transparent,
+                    width: 1.5,
+                  ),
+                  boxShadow: _filterType == 'Income'
+                      ? []
+                      : [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.03),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.incomeColor.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.arrow_downward,
+                            size: 14,
+                            color: AppTheme.incomeColor,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Income',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: const Color(0xFF64748B),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: currencySymbol,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.incomeColor,
+                            ),
+                          ),
+                          TextSpan(
+                            text: monthlyTotals['income']!.toStringAsFixed(0),
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.incomeColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Expense Toggle
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _toggleFilter('Expense'),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: _filterType == 'Expense'
+                      ? AppTheme.expenseColor.withValues(alpha: 0.15)
+                      : Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _filterType == 'Expense'
+                        ? AppTheme.expenseColor
+                        : Colors.transparent,
+                    width: 1.5,
+                  ),
+                  boxShadow: _filterType == 'Expense'
+                      ? []
+                      : [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.03),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.expenseColor.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.arrow_upward,
+                            size: 14,
+                            color: AppTheme.expenseColor,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Expense',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: const Color(0xFF64748B),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: currencySymbol,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.expenseColor,
+                            ),
+                          ),
+                          TextSpan(
+                            text: monthlyTotals['expense']!.toStringAsFixed(0),
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.expenseColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransactionsList(
+    Map<String, List<Transaction>> groupedTransactions,
+    CurrencyProvider currencyProvider,
+  ) {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: groupedTransactions.keys.length,
+      itemBuilder: (context, index) {
+        final dateKey = groupedTransactions.keys.elementAt(index);
+        final dateTransactions = groupedTransactions[dateKey]!;
+        final date = DateTime.parse(dateKey);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Date Header
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                DateFormat('dd/MM').format(date),
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  color: const Color(0xFF1A1A1A),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            // Transactions for this date
+            ...dateTransactions.map(
+              (transaction) =>
+                  _buildTransactionCard(transaction, currencyProvider),
+            ),
+          ],
+        );
+      },
     );
   }
 

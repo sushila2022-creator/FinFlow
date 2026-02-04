@@ -1,0 +1,25 @@
+Professional FinFlow App Icon Design
+
+Design Concept:
+- Modern, professional finance app icon
+- Clean blue gradient background (#0A2540 to #1a3a5a)
+- White circular border with subtle glow
+- Animated finance chart with upward trend
+- Currency symbols ($ and ₹) to represent global finance
+- Smooth animations for dynamic feel
+
+Key Elements:
+1. Background: Deep blue gradient with circular shape
+2. Finance Chart: Three stacked bars with upward trend arrow
+3. Animation: Pulsing effect on bars and fade animation on arrow
+4. Currency Elements: Subtle $ and ₹ symbols
+5. Shine Effect: Subtle highlight for premium feel
+6. Border Glow: Soft blue glow around the icon
+
+This design represents:
+- Financial growth and stability
+- Modern technology and innovation
+- Global accessibility
+- Professional reliability
+
+The icon should be exported in multiple sizes for Android and iOS platforms.
