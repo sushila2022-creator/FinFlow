@@ -197,6 +197,22 @@ class DatabaseHelper {
     await _seedDatabase(db);
   }
 
+  Future<List<Map<String, dynamic>>> getTransactionsByDateRange(
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
+    final db = await instance.database;
+    return await db.query(
+      'transactions',
+      where: 'date BETWEEN ? AND ?',
+      whereArgs: [
+        startDate.millisecondsSinceEpoch,
+        endDate.millisecondsSinceEpoch,
+      ],
+      orderBy: 'date DESC',
+    );
+  }
+
   Future<Set<String>> getAllTransactionSignatures() async {
     final db = await instance.database;
     final result = await db.query('transactions', columns: ['amount', 'date']);

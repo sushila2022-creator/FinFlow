@@ -22,6 +22,10 @@ class SmsService {
     start();
   }
 
+  void stopScanning() {
+    stop();
+  }
+
   void stop() {
     isScanning = false;
   }

@@ -124,7 +124,25 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
       if (mounted) Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
-      _showSnackBar('Google Sign In failed: ${e.toString()}', Colors.red);
+      String errorMessage = 'Google Sign In failed';
+
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          case 'network-request-failed':
+            errorMessage =
+                'Network error. Please check your internet connection';
+            break;
+          case 'operation-not-allowed':
+            errorMessage = 'Google sign-in is not enabled';
+            break;
+          default:
+            errorMessage = e.message ?? 'Google Sign In failed';
+        }
+      } else {
+        errorMessage = 'Google Sign In failed. Please try again.';
+      }
+
+      _showSnackBar(errorMessage, AppTheme.expenseColor);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -153,7 +171,25 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
       if (mounted) Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
-      _showSnackBar('Apple Sign In failed: ${e.toString()}', Colors.red);
+      String errorMessage = 'Apple Sign In failed';
+
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          case 'network-request-failed':
+            errorMessage =
+                'Network error. Please check your internet connection';
+            break;
+          case 'operation-not-allowed':
+            errorMessage = 'Apple sign-in is not enabled';
+            break;
+          default:
+            errorMessage = e.message ?? 'Apple Sign In failed';
+        }
+      } else {
+        errorMessage = 'Apple Sign In failed. Please try again.';
+      }
+
+      _showSnackBar(errorMessage, AppTheme.expenseColor);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

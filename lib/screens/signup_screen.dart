@@ -8,6 +8,8 @@ import 'package:finflow/utils/app_theme.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:finflow/screens/welcome_screen.dart';
+import 'package:provider/provider.dart';
+import 'package:finflow/providers/user_provider.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -55,20 +57,25 @@ class _SignupScreenState extends State<SignupScreen> {
     }
 
     if (password != confirmPassword) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Passwords do not match'),
-          backgroundColor: AppTheme.expenseColor,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Passwords do not match'),
+            backgroundColor: AppTheme.expenseColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-        ),
-      );
+        );
+      }
       return;
     }
 
     setState(() => _isLoading = true);
+
+    // Capture provider before async operations
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
 
     try {
       final userCredential = await FirebaseAuth.instance
@@ -88,32 +95,70 @@ class _SignupScreenState extends State<SignupScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('has_logged_in', true);
 
+      // Refresh user state in provider
+      await userProvider.refreshUser();
+
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Account created successfully!'),
-          backgroundColor: AppTheme.accentColor,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Account created successfully!'),
+            backgroundColor: AppTheme.accentColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-        ),
-      );
-      Navigator.pushReplacementNamed(context, '/home');
+        );
+      }
+
+      // Navigate to main wrapper with a small delay to show success message
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      });
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-          backgroundColor: AppTheme.expenseColor,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+      String errorMessage = 'An error occurred during sign up';
+
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          case 'email-already-in-use':
+            errorMessage = 'An account with this email already exists';
+            break;
+          case 'invalid-email':
+            errorMessage = 'The email address is not valid';
+            break;
+          case 'weak-password':
+            errorMessage = 'Password is too weak. Use at least 6 characters';
+            break;
+          case 'operation-not-allowed':
+            errorMessage = 'Email/password sign-in is not enabled';
+            break;
+          case 'network-request-failed':
+            errorMessage =
+                'Network error. Please check your internet connection';
+            break;
+          default:
+            errorMessage = e.message ?? 'An error occurred during sign up';
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: AppTheme.expenseColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-        ),
-      );
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -121,6 +166,9 @@ class _SignupScreenState extends State<SignupScreen> {
 
   Future<void> _signupWithGoogle() async {
     setState(() => _isLoading = true);
+
+    // Capture provider before async operations
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
 
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
@@ -158,32 +206,39 @@ class _SignupScreenState extends State<SignupScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('has_logged_in', true);
 
+      // Refresh user state in provider
+      await userProvider.refreshUser();
+
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Account created with Google successfully!'),
-          backgroundColor: AppTheme.accentColor,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Account created with Google successfully!'),
+            backgroundColor: AppTheme.accentColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-        ),
-      );
+        );
+      }
       Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Google sign-up failed: ${e.toString()}'),
-          backgroundColor: AppTheme.expenseColor,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google sign-up failed: ${e.toString()}'),
+            backgroundColor: AppTheme.expenseColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-        ),
-      );
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -191,6 +246,9 @@ class _SignupScreenState extends State<SignupScreen> {
 
   Future<void> _signupWithApple() async {
     setState(() => _isLoading = true);
+
+    // Capture provider before async operations
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
 
     try {
       final appleCredential = await SignInWithApple.getAppleIDCredential(
@@ -227,32 +285,39 @@ class _SignupScreenState extends State<SignupScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('has_logged_in', true);
 
+      // Refresh user state in provider
+      await userProvider.refreshUser();
+
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Account created with Apple successfully!'),
-          backgroundColor: AppTheme.accentColor,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Account created with Apple successfully!'),
+            backgroundColor: AppTheme.accentColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-        ),
-      );
+        );
+      }
       Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Apple sign-up failed: ${e.toString()}'),
-          backgroundColor: AppTheme.expenseColor,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Apple sign-up failed: ${e.toString()}'),
+            backgroundColor: AppTheme.expenseColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-        ),
-      );
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

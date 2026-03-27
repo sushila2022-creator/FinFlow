@@ -67,57 +67,54 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       );
     }
 
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        height: 36,
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white, width: 2),
+    return Container(
+      height: 36,
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: TextField(
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        autofocus: true,
+        style: TextStyle(
+          color: Colors.black,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'PlusJakartaSans',
         ),
-        child: TextField(
-          controller: _searchController,
-          focusNode: _searchFocusNode,
-          autofocus: true,
-          style: TextStyle(
-            color: Colors.black,
+        cursorColor: Colors.black,
+        cursorWidth: 2,
+        keyboardType: TextInputType.text,
+        keyboardAppearance: Theme.of(context).brightness,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'Search transactions...',
+          hintStyle: TextStyle(
+            color: Theme.of(context).hintColor,
             fontSize: 12,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
             fontFamily: 'PlusJakartaSans',
           ),
-          cursorColor: Colors.black,
-          cursorWidth: 2,
-          keyboardType: TextInputType.text,
-          keyboardAppearance: Theme.of(context).brightness,
-          textInputAction: TextInputAction.search,
-          decoration: InputDecoration(
-            hintText: 'Search transactions...',
-            hintStyle: TextStyle(
-              color: Theme.of(context).hintColor,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              fontFamily: 'PlusJakartaSans',
-            ),
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
-            errorBorder: InputBorder.none,
-            disabledBorder: InputBorder.none,
-            isDense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            prefixIcon: Icon(
-              Icons.search,
-              color: Theme.of(context).hintColor,
-              size: 20,
-            ),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          prefixIcon: Icon(
+            Icons.search,
+            color: Theme.of(context).hintColor,
+            size: 20,
           ),
-          onChanged: (value) {
-            setState(() {
-              _searchQuery = value.toLowerCase();
-            });
-          },
         ),
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value.toLowerCase();
+          });
+        },
       ),
     );
   }
@@ -328,7 +325,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                             ),
                           ),
                           TextSpan(
-                            text: monthlyTotals['income']!.toStringAsFixed(0),
+                            text: NumberFormat(
+                              '#,##0',
+                            ).format(monthlyTotals['income']!),
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
@@ -416,7 +415,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                             ),
                           ),
                           TextSpan(
-                            text: monthlyTotals['expense']!.toStringAsFixed(0),
+                            text: NumberFormat(
+                              '#,##0',
+                            ).format(monthlyTotals['expense']!),
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
@@ -643,12 +644,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   ),
                 ),
                 TextSpan(
-                  text: transaction.amount.abs().toStringAsFixed(
-                    transaction.amount.abs().truncateToDouble() ==
-                            transaction.amount.abs()
-                        ? 0
-                        : 2,
-                  ),
+                  text: NumberFormat('#,##0').format(transaction.amount.abs()),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13, // Standardized to match Dashboard
                     fontWeight: FontWeight.w600,

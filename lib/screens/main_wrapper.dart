@@ -14,13 +14,21 @@ class MainWrapper extends StatefulWidget {
 
 class _MainWrapperState extends State<MainWrapper> {
   int _currentIndex = 0;
+  final Map<int, Widget> _screens = {};
 
-  final List<Widget> _screens = [
-    const DashboardScreen(),
-    const TransactionsScreen(),
-    const AnalyticsScreen(),
-    const SettingsScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    // Initialize screens lazily
+    _initializeScreens();
+  }
+
+  void _initializeScreens() {
+    _screens[0] = const DashboardScreen();
+    _screens[1] = const TransactionsScreen();
+    _screens[2] = const AnalyticsScreen();
+    _screens[3] = const SettingsScreen();
+  }
 
   void _onTabTapped(int index) {
     setState(() {

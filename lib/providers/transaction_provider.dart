@@ -15,6 +15,10 @@ class TransactionProvider with ChangeNotifier {
   StreamSubscription? _transactionsSubscription;
   List<Transaction> _transactions = [];
   bool _isInitialized = false;
+  bool _isLoading = false;
+
+  // Public getter for initialization status
+  bool get isInitialized => _isInitialized;
 
   // Computed values
   double _totalIncome = 0;
@@ -36,15 +40,50 @@ class TransactionProvider with ChangeNotifier {
   String _currencyCode = 'INR';
 
   TransactionProvider() {
-    _initializeTransactions();
-    _injectDummyDataIfNeeded();
+    // Initialize without immediate data loading to improve startup performance
+    _initializeProviders();
   }
 
-  void _initializeTransactions() {
-    if (_isInitialized) return;
+  void _initializeProviders() {
+    // Initialize currency and theme providers without loading transactions
+    _currencySymbol = '₹';
+    _currencyCode = 'INR';
+  }
+
+  Future<void> initializeTransactions() async {
+    if (_isInitialized || _isLoading) return;
+
+    _isLoading = true;
     _isInitialized = true;
 
-    // Listen to real-time updates from Firestore
+    try {
+      // Load initial data with limit to improve performance
+      final snapshot = await _firestore
+          .collection('transactions')
+          .orderBy('date', descending: true)
+          .limit(50) // Limit initial load
+          .get();
+
+      _transactions = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return Transaction.fromJson(data);
+      }).toList();
+
+      _calculateTotals();
+      notifyListeners();
+
+      // Start listening for real-time updates after initial load
+      _startRealTimeListener();
+    } catch (e) {
+      debugPrint('Failed to initialize transactions: $e');
+      _isInitialized = false;
+    } finally {
+      _isLoading = false;
+    }
+  }
+
+  void _startRealTimeListener() {
     try {
       _transactionsSubscription = _firestore
           .collection('transactions')
@@ -53,17 +92,13 @@ class TransactionProvider with ChangeNotifier {
           .listen(
             (snapshot) {
               try {
-                debugPrint('Transactions loaded: ${snapshot.docs.length}');
                 _transactions = snapshot.docs.map((doc) {
                   final data = doc.data();
-                  // Ensure the document ID is passed to the transaction
                   data['id'] = doc.id;
                   return Transaction.fromJson(data);
                 }).toList();
 
-                // Calculate totals from the stream
                 _calculateTotals();
-
                 notifyListeners();
               } catch (e) {
                 debugPrint('Error processing transactions snapshot: $e');
@@ -71,17 +106,10 @@ class TransactionProvider with ChangeNotifier {
             },
             onError: (error) {
               debugPrint('Error listening to transactions stream: $error');
-              // Attempt to reinitialize after a delay if it's a permission error
-              if (error.toString().contains('PERMISSION_DENIED')) {
-                debugPrint(
-                  'Firestore permission denied. Check google-services.json package name.',
-                );
-              }
             },
           );
     } catch (e) {
-      debugPrint('Failed to initialize Firestore stream: $e');
-      _isInitialized = false; // Allow retry
+      debugPrint('Failed to start real-time listener: $e');
     }
   }
 
@@ -325,143 +353,6 @@ class TransactionProvider with ChangeNotifier {
     } catch (e) {
       if (!context.mounted) return;
       showSnackBar(context, 'An error occurred during import: $e');
-    }
-  }
-
-  Future<void> _injectDummyDataIfNeeded() async {
-    // Only inject dummy data if there are no transactions
-    if (_transactions.isNotEmpty) return;
-
-    final now = DateTime.now();
-    final dummyTransactions = [
-      // Day 1 (2 days ago) - Mix of income and expenses
-      Transaction(
-        description: 'Monthly Salary',
-        amount: 50000.0,
-        currencyCode: 'INR',
-        date: now.subtract(const Duration(days: 2)),
-        category: 'Salary',
-        categoryId: 6,
-        isIncome: true,
-        accountId: 1,
-        notes: 'Monthly salary payment',
-      ),
-      Transaction(
-        description: 'Grocery shopping',
-        amount: 2500.0,
-        currencyCode: 'INR',
-        date: now.subtract(const Duration(days: 2)),
-        category: 'Groceries',
-        categoryId: 1,
-        isIncome: false,
-        accountId: 1,
-        notes: 'Weekly groceries',
-      ),
-      Transaction(
-        description: 'Electricity bill',
-        amount: 1800.0,
-        currencyCode: 'INR',
-        date: now.subtract(const Duration(days: 2)),
-        category: 'Electricity',
-        categoryId: 3,
-        isIncome: false,
-        accountId: 1,
-        notes: 'Monthly electricity bill',
-      ),
-
-      // Day 2 (1 day ago) - More transactions
-      Transaction(
-        description: 'Freelance project payment',
-        amount: 15000.0,
-        currencyCode: 'INR',
-        date: now.subtract(const Duration(days: 1)),
-        category: 'Business',
-        categoryId: 7,
-        isIncome: true,
-        accountId: 1,
-        notes: 'Web development project',
-      ),
-      Transaction(
-        description: 'Lunch at restaurant',
-        amount: 450.0,
-        currencyCode: 'INR',
-        date: now.subtract(const Duration(days: 1)),
-        category: 'Food',
-        categoryId: 1,
-        isIncome: false,
-        accountId: 1,
-        notes: 'Lunch with colleagues',
-      ),
-      Transaction(
-        description: 'Mobile recharge',
-        amount: 599.0,
-        currencyCode: 'INR',
-        date: now.subtract(const Duration(days: 1)),
-        category: 'Mobile',
-        categoryId: 3,
-        isIncome: false,
-        accountId: 1,
-        notes: 'Monthly mobile plan',
-      ),
-      Transaction(
-        description: 'Petrol refill',
-        amount: 1200.0,
-        currencyCode: 'INR',
-        date: now.subtract(const Duration(days: 1)),
-        category: 'Petrol',
-        categoryId: 2,
-        isIncome: false,
-        accountId: 1,
-        notes: 'Fuel for car',
-      ),
-
-      // Day 3 (today) - Final transactions
-      Transaction(
-        description: 'Year-end bonus',
-        amount: 25000.0,
-        currencyCode: 'INR',
-        date: now,
-        category: 'Bonus',
-        categoryId: 8,
-        isIncome: true,
-        accountId: 1,
-        notes: 'Annual performance bonus',
-      ),
-      Transaction(
-        description: 'EMI payment',
-        amount: 8500.0,
-        currencyCode: 'INR',
-        date: now,
-        category: 'EMI',
-        categoryId: 3,
-        isIncome: false,
-        accountId: 1,
-        notes: 'Car loan EMI',
-      ),
-      Transaction(
-        description: 'Medical checkup',
-        amount: 1200.0,
-        currencyCode: 'INR',
-        date: now,
-        category: 'Health',
-        categoryId: 4,
-        isIncome: false,
-        accountId: 1,
-        notes: 'Annual health checkup',
-      ),
-    ];
-
-    try {
-      for (final transaction in dummyTransactions) {
-        await addTransaction(transaction);
-        // Small delay to avoid overwhelming Firestore
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-      debugPrint(
-        'Successfully injected ${dummyTransactions.length} dummy transactions',
-      );
-    } catch (e) {
-      debugPrint('Error injecting dummy data: $e');
     }
   }
 

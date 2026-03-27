@@ -3,9 +3,11 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:finflow/providers/transaction_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
+import 'package:finflow/providers/user_provider.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:finflow/models/transaction.dart';
 import 'package:finflow/screens/transactions_screen.dart';
@@ -62,13 +64,30 @@ class _DashboardScreenState extends State<DashboardScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _smsService.onTransactionDetected = (detected) {
-      if (mounted) {
+      if (mounted && _isSmsScanningEnabled) {
         setState(() {
           _detectedTransactions.add(detected);
         });
       }
     };
+
+    // Initialize providers after widget is mounted
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      // Initialize transaction provider
+      final transactionProvider = Provider.of<TransactionProvider>(
+        context,
+        listen: false,
+      );
+      if (!transactionProvider.isInitialized) {
+        await transactionProvider.initializeTransactions();
+      }
+
+      // Load SMS scanning state from settings
+      await _loadSmsScanState();
+
+      // Initialize SMS permission
       final granted = await _smsService.requestSmsPermission();
       if (!mounted) return;
       if (!granted && mounted) {
@@ -84,6 +103,24 @@ class _DashboardScreenState extends State<DashboardScreen>
     _tabController.dispose();
     _pulseController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSmsScanState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = prefs.getBool('smart_sms_scan_enabled') ?? false;
+    if (!mounted) return;
+    setState(() {
+      _isSmsScanningEnabled = enabled;
+    });
+
+    if (enabled) {
+      _smsService.startScanning();
+      _pulseController.repeat(reverse: true);
+    } else {
+      _smsService.stopScanning();
+      _pulseController.stop();
+      _pulseController.value = 0;
+    }
   }
 
   List<Transaction> _getFilteredTransactions(List<Transaction> transactions) {
@@ -116,6 +153,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final currentUser = userProvider.currentUser;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -131,25 +170,65 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ),
         actions: [
-          GestureDetector(
-            onTap: () {
-              if (!_isSmsScanningEnabled) {
-                _smsService.startScanning();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('SMS Scanner Activated')),
-                );
-              }
-              setState(() {
-                _isSmsScanningEnabled = !_isSmsScanningEnabled;
-                if (_isSmsScanningEnabled) {
-                  _pulseController.repeat(reverse: true);
-                } else {
-                  _pulseController.stop();
-                  _pulseController.value = 0;
-                }
-              });
-            },
-            child: Container(
+          if (currentUser?.isPremium == true)
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _isSmsScanningEnabled = !_isSmsScanningEnabled;
+                  if (_isSmsScanningEnabled) {
+                    _smsService.startScanning();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('SMS Scanner Activated')),
+                    );
+                    _pulseController.repeat(reverse: true);
+                  } else {
+                    _smsService.stopScanning();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('SMS Scanner Deactivated')),
+                    );
+                    _pulseController.stop();
+                    _pulseController.value = 0;
+                  }
+                });
+              },
+              child: Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: AnimatedBuilder(
+                  animation: _pulseController,
+                  builder: (context, child) {
+                    return Transform.scale(
+                      scale: _isSmsScanningEnabled
+                          ? _scaleAnimation.value
+                          : 1.0,
+                      child: Icon(
+                        _isSmsScanningEnabled
+                            ? Icons.qr_code_scanner
+                            : Icons.qr_code_scanner,
+                        color: _isSmsScanningEnabled
+                            ? Colors.green
+                            : Colors.grey,
+                        size: 22,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          if (currentUser?.isPremium == false || currentUser == null)
+            Container(
               margin: const EdgeInsets.only(right: 8),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
@@ -164,23 +243,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ],
               ),
-              child: AnimatedBuilder(
-                animation: _pulseController,
-                builder: (context, child) {
-                  return Transform.scale(
-                    scale: _isSmsScanningEnabled ? _scaleAnimation.value : 1.0,
-                    child: Icon(
-                      _isSmsScanningEnabled
-                          ? Icons.qr_code_scanner
-                          : Icons.qr_code_scanner,
-                      color: _isSmsScanningEnabled ? Colors.green : Colors.grey,
-                      size: 22,
-                    ),
-                  );
-                },
+              child: Icon(
+                Icons.qr_code_scanner,
+                color: Colors.grey[400],
+                size: 22,
               ),
             ),
-          ),
         ],
       ),
       body: SafeArea(
@@ -286,7 +354,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               monthlyChange,
                               isDarkMode,
                             ),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 12),
                             _buildIncomeExpenseCards(
                               income,
                               expense,
@@ -294,13 +362,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                               isDarkMode,
                             ),
                             const SizedBox(height: 14),
+                            const SizedBox(height: 16),
+                            _buildSearchBar(isDarkMode),
+                            const SizedBox(height: 12),
                             _buildDetectedTransactionsCard(
                               currencySymbol,
                               isDarkMode,
                             ),
-                            const SizedBox(height: 20),
-                            _buildSearchBar(isDarkMode),
-                            const SizedBox(height: 12),
                             _buildRecentTransactionsHeader(isDarkMode),
                             _buildTransactionsList(
                               filteredTransactions,
@@ -369,7 +437,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   ) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
@@ -380,65 +448,82 @@ class _DashboardScreenState extends State<DashboardScreen>
         boxShadow: [
           BoxShadow(
             color: AppTheme.primaryColor.withValues(alpha: 0.4),
-            blurRadius: 16,
+            blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         children: [
-          Center(
-            child: Column(
-              children: [
-                Text(
-                  'Total Balance',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 9,
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: balance),
-                  duration: const Duration(milliseconds: 1000),
-                  builder: (context, value, child) {
-                    return Text(
-                      AppTheme.formatCurrency(value.abs(), symbol: symbol),
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: -0.8,
-                      ),
-                    );
-                  },
-                ),
-              ],
+          // Label
+          Text(
+            'Total Balance',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.8),
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
+
+          // Balance Amount with enhanced typography
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: balance),
+            duration: const Duration(milliseconds: 1000),
+            builder: (context, value, child) {
+              return Text(
+                AppTheme.formatCurrency(value.abs(), symbol: symbol),
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: -0.5,
+                  height: 1.2,
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 12),
+
+          // Monthly Change indicator
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
+              color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Monthly Change',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 9,
-                    color: Colors.white70,
-                  ),
+                Row(
+                  children: [
+                    Icon(
+                      monthlyChange >= 0
+                          ? Icons.trending_up
+                          : Icons.trending_down,
+                      size: 14,
+                      color: monthlyChange >= 0
+                          ? AppTheme.accentColor
+                          : const Color(0xFFF43F5E),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Monthly Change',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
                 Text(
                   AppTheme.formatCurrency(monthlyChange.abs(), symbol: symbol),
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: monthlyChange >= 0
                         ? AppTheme.accentColor
@@ -501,55 +586,94 @@ class _DashboardScreenState extends State<DashboardScreen>
     required bool isDarkMode,
   }) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isDarkMode ? const Color(0xFF2D2D2D) : const Color(0xFFF1F5F9),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: isDarkMode ? Colors.black12 : const Color(0xFFE2E8F0),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+            spreadRadius: 0,
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: iconColor, size: 18),
+          // Icon and Title Row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: iconColor.withValues(alpha: 0.2),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              // Spacer to push title to the right
+              const SizedBox(width: 8),
+            ],
           ),
-          const SizedBox(height: 14),
+
+          const SizedBox(height: 12),
+
+          // Title
           Text(
             title,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 11,
               color: isDarkMode
-                  ? const Color(0xFFB0B0B0)
+                  ? const Color(0xFF9CA3AF)
                   : const Color(0xFF64748B),
               fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
+              letterSpacing: 0.2,
             ),
           ),
-          const SizedBox(height: 3),
-          TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: amount),
-            duration: const Duration(milliseconds: 800),
-            builder: (context, value, child) {
-              return Text(
-                AppTheme.formatCurrency(value, symbol: symbol),
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: isDarkMode
-                      ? AppTheme.textPrimaryDark
-                      : AppTheme.textPrimaryLight,
-                ),
-              );
-            },
+
+          const SizedBox(height: 8),
+
+          // Amount with proper alignment
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: amount),
+              duration: const Duration(milliseconds: 800),
+              builder: (context, value, child) {
+                final formattedAmount = AppTheme.formatCurrency(
+                  value,
+                  symbol: symbol,
+                );
+                return Text(
+                  formattedAmount,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: isDarkMode
+                        ? AppTheme.textPrimaryDark
+                        : AppTheme.textPrimaryLight,
+                    height: 1.2,
+                  ),
+                  textAlign: TextAlign.left,
+                  overflow: TextOverflow.ellipsis,
+                );
+              },
+            ),
           ),
-          const SizedBox(height: 3),
         ],
       ),
     );
@@ -604,89 +728,89 @@ class _DashboardScreenState extends State<DashboardScreen>
               ],
             ),
             const SizedBox(height: 16),
-            ListView.builder(
-              shrinkWrap: true,
-              itemCount: _detectedTransactions.length,
-              itemBuilder: (context, index) {
-                final detected = _detectedTransactions[index];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF43F5E).withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFFF43F5E).withValues(alpha: 0.2),
+            SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                children: _detectedTransactions.map((detected) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF43F5E).withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFFF43F5E).withValues(alpha: 0.2),
+                      ),
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.warning_amber_rounded,
-                        color: const Color(0xFFF43F5E),
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Detected: ${AppTheme.formatCurrency(detected['amount'], symbol: symbol)}',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFFF43F5E),
-                              ),
-                            ),
-                            Text(
-                              '${detected['merchant']} • ${detected['category']} • ${DateFormat('MMM dd').format(detected['date'])}',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 10,
-                                color: isDarkMode
-                                    ? const Color(0xFFB0B0B0)
-                                    : const Color(0xFF64748B),
-                              ),
-                            ),
-                          ],
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          color: const Color(0xFFF43F5E),
+                          size: 20,
                         ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => AddTransactionScreen(
-                                transactionToEdit: {
-                                  'amount': detected['amount'],
-                                  'note': detected['body'] ?? '',
-                                  'date': detected['date'].toIso8601String(),
-                                  'type': 'Expense',
-                                  'category': detected['category'],
-                                },
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Detected: ${AppTheme.formatCurrency(detected['amount'], symbol: symbol)}',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFFF43F5E),
+                                ),
                               ),
-                            ),
-                          ).then((result) {
-                            if (result == true && mounted) {
-                              setState(() {
-                                _detectedTransactions.remove(detected);
-                              });
-                            }
-                          });
-                        },
-                        child: Text(
-                          'Add',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.accentColor,
+                              Text(
+                                '${detected['merchant']} • ${detected['category']} • ${DateFormat('MMM dd').format(detected['date'])}',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  color: isDarkMode
+                                      ? const Color(0xFFB0B0B0)
+                                      : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+                        TextButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => AddTransactionScreen(
+                                  transactionToEdit: {
+                                    'amount': detected['amount'],
+                                    'note': detected['body'] ?? '',
+                                    'date': detected['date'].toIso8601String(),
+                                    'type': 'Expense',
+                                    'category': detected['category'],
+                                  },
+                                ),
+                              ),
+                            ).then((result) {
+                              if (result == true && mounted) {
+                                setState(() {
+                                  _detectedTransactions.remove(detected);
+                                });
+                              }
+                            });
+                          },
+                          child: Text(
+                            'Add',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.accentColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
           ],
         ),
@@ -943,37 +1067,56 @@ class _DashboardScreenState extends State<DashboardScreen>
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
         decoration: BoxDecoration(
           color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isDarkMode
                 ? const Color(0xFF2D2D2D)
                 : const Color(0xFFF1F5F9),
           ),
+          boxShadow: [
+            BoxShadow(
+              color: isDarkMode ? Colors.black12 : const Color(0xFFE2E8F0),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+              spreadRadius: 0,
+            ),
+          ],
         ),
         child: ListTile(
           dense: true,
           visualDensity: VisualDensity.compact,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
-            vertical: 0,
+            vertical: 8,
           ),
           leading: Container(
-            width: 28,
-            height: 28,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               color:
                   (isExpense
                           ? const Color(0xFFF43F5E)
                           : const Color(0xFF10B981))
                       .withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color:
+                      (isExpense
+                              ? const Color(0xFFF43F5E)
+                              : const Color(0xFF10B981))
+                          .withValues(alpha: 0.2),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: Icon(
               AppTheme.getCategoryIcon(transaction.categoryName),
               color: isExpense
                   ? const Color(0xFFF43F5E)
                   : const Color(0xFF10B981),
-              size: 18,
+              size: 20,
             ),
           ),
           title: Text(
@@ -981,52 +1124,76 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ? transaction.description
                 : transaction.title,
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
               color: isDarkMode
                   ? AppTheme.textPrimaryDark
                   : AppTheme.textPrimaryLight,
+              height: 1.3,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '${transaction.categoryName} • ${DateFormat('MMM dd, yyyy').format(transaction.date)}',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11,
+                color: isDarkMode
+                    ? const Color(0xFF9CA3AF)
+                    : const Color(0xFF64748B),
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
-          subtitle: Text(
-            '${transaction.categoryName} • ${DateFormat('MMM dd, yyyy').format(transaction.date)}',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 10,
-              color: isDarkMode
-                  ? const Color(0xFFB0B0B0)
-                  : const Color(0xFF64748B),
-              fontWeight: FontWeight.w500,
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color:
+                  (isExpense
+                          ? const Color(0xFFF43F5E)
+                          : const Color(0xFF10B981))
+                      .withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color:
+                    (isExpense
+                            ? const Color(0xFFF43F5E)
+                            : const Color(0xFF10B981))
+                        .withValues(alpha: 0.3),
+              ),
             ),
-          ),
-          trailing: RichText(
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: symbol,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: isExpense
-                        ? const Color(0xFFF43F5E)
-                        : const Color(0xFF10B981),
+            child: RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: symbol,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: isExpense
+                          ? const Color(0xFFF43F5E)
+                          : const Color(0xFF10B981),
+                    ),
                   ),
-                ),
-                TextSpan(
-                  text: transaction.amount.abs().toStringAsFixed(
-                    transaction.amount.abs().truncateToDouble() ==
-                            transaction.amount.abs()
-                        ? 0
-                        : 2,
+                  TextSpan(
+                    text: transaction.amount.abs().toStringAsFixed(
+                      transaction.amount.abs().truncateToDouble() ==
+                              transaction.amount.abs()
+                          ? 0
+                          : 2,
+                    ),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: isExpense
+                          ? const Color(0xFFF43F5E)
+                          : const Color(0xFF10B981),
+                    ),
                   ),
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: isExpense
-                        ? const Color(0xFFF43F5E)
-                        : const Color(0xFF10B981),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

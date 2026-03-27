@@ -31,6 +31,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   final _formKey = GlobalKey<FormState>();
   File? _attachedImage;
   final ImagePicker _imagePicker = ImagePicker();
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -762,6 +763,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   Future<void> _saveTransaction() async {
     if (!_validateAndSave()) return;
 
+    setState(() => _isSaving = true);
+
     final amount = double.tryParse(_amountController.text);
     if (amount == null || amount <= 0) {
       if (mounted) {
@@ -868,6 +871,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -1446,7 +1451,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                           ),
                         ),
                         child: ElevatedButton(
-                          onPressed: _saveTransaction,
+                          onPressed: _isSaving ? null : _saveTransaction,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0D9488),
                             foregroundColor: Colors.white,

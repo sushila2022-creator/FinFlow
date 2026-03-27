@@ -1,6 +1,7 @@
 import 'package:finflow/providers/transaction_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
+import 'package:finflow/providers/user_provider.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -24,6 +25,9 @@ import 'package:finflow/services/sms_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:finflow/screens/premium_screen.dart';
+import 'package:syncfusion_flutter_xlsio/xlsio.dart' hide Column;
+import 'package:open_file/open_file.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -85,9 +89,9 @@ class SettingsScreenState extends State<SettingsScreen> {
     });
 
     if (enabled) {
-      SmsService().start();
+      SmsService().startScanning();
     } else {
-      SmsService().stop();
+      SmsService().stopScanning();
     }
   }
 
@@ -140,6 +144,53 @@ class SettingsScreenState extends State<SettingsScreen> {
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showSmsScanInfoDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Smart SMS Scan'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Smart SMS Scan automatically detects bank transaction SMS messages and suggests them for quick entry.',
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyMedium?.color,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Features:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text('• Automatically scans incoming SMS messages'),
+              const Text('• Detects bank transaction details'),
+              const Text('• Suggests transactions for quick addition'),
+              const Text('• Supports multiple bank formats'),
+              const SizedBox(height: 16),
+              Text(
+                'Note: This feature requires SMS permissions and will run in the background.',
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyMedium?.color,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Got it'),
             ),
           ],
         );
@@ -377,38 +428,69 @@ class SettingsScreenState extends State<SettingsScreen> {
                   {
                     'icon': Icons.sms,
                     'title': 'Smart SMS Scan',
-                    'onTap': () async {
-                      final prefs = await SharedPreferences.getInstance();
-                      final newValue = !_isSmsScanEnabled;
-                      await prefs.setBool('smart_sms_scan_enabled', newValue);
-                      setState(() {
-                        _isSmsScanEnabled = newValue;
-                      });
-
-                      if (newValue) {
-                        SmsService().start();
+                    'subtitle':
+                        Provider.of<UserProvider>(
+                              context,
+                            ).currentUser?.isPremium ==
+                            true
+                        ? 'Auto-detect bank transaction SMS'
+                        : 'Premium feature',
+                    'onTap': () {
+                      final isPremium =
+                          Provider.of<UserProvider>(
+                            context,
+                            listen: false,
+                          ).currentUser?.isPremium ==
+                          true;
+                      if (!isPremium) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const PremiumScreen(),
+                          ),
+                        );
                       } else {
-                        SmsService().stop();
+                        _showSmsScanInfoDialog();
                       }
                     },
-                    'trailing': Switch(
-                      value: _isSmsScanEnabled,
-                      activeThumbColor: const Color(0xFF00C853),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      onChanged: (value) async {
-                        final prefs = await SharedPreferences.getInstance();
-                        await prefs.setBool('smart_sms_scan_enabled', value);
-                        setState(() {
-                          _isSmsScanEnabled = value;
-                        });
+                    'trailing':
+                        Provider.of<UserProvider>(
+                              context,
+                            ).currentUser?.isPremium ==
+                            true
+                        ? Switch(
+                            value: _isSmsScanEnabled,
+                            activeThumbColor: const Color(0xFF00C853),
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            onChanged: (value) async {
+                              final prefs =
+                                  await SharedPreferences.getInstance();
+                              await prefs.setBool(
+                                'smart_sms_scan_enabled',
+                                value,
+                              );
+                              setState(() {
+                                _isSmsScanEnabled = value;
+                              });
 
-                        if (value) {
-                          SmsService().start();
-                        } else {
-                          SmsService().stop();
-                        }
-                      },
-                    ),
+                              if (value) {
+                                SmsService().startScanning();
+                              } else {
+                                SmsService().stopScanning();
+                              }
+                            },
+                          )
+                        : Icon(
+                            Icons.lock,
+                            color: const Color(0xFFFFD700),
+                            size: 24,
+                          ),
+                  },
+                  {
+                    'title':
+                        'We only read transaction-related messages. No OTPs or personal chats.',
+                    'isDescription': true,
                   },
                   {
                     'icon': Icons.category,
@@ -438,6 +520,12 @@ class SettingsScreenState extends State<SettingsScreen> {
                   );
                   transactionProvider.exportTransactionsCsv(context);
                 },
+                'iconColor': const Color(0xFF00C853),
+              },
+              {
+                'icon': Icons.calendar_month,
+                'title': 'Export Monthly Excel',
+                'onTap': _exportMonthlyExcel,
                 'iconColor': const Color(0xFF00C853),
               },
               {
@@ -683,6 +771,28 @@ class SettingsScreenState extends State<SettingsScreen> {
         ),
         child: Column(
           children: items.map((item) {
+            // Handle description items
+            if (item['isDescription'] == true) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 8,
+                ),
+                child: Text(
+                  item['title'],
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: isDarkMode
+                        ? AppTheme.textSecondaryDark
+                        : AppTheme.textSecondaryLight,
+                    height: 1.4,
+                  ),
+                  textAlign: TextAlign.left,
+                ),
+              );
+            }
+
+            // Handle regular list items
             return ListTile(
               onTap: item['onTap'],
               dense: true,
@@ -786,6 +896,108 @@ class SettingsScreenState extends State<SettingsScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _exportMonthlyExcel() async {
+    try {
+      final DateTime now = DateTime.now();
+      final DateTime firstDayOfMonth = DateTime(now.year, now.month, 1);
+      final DateTime lastDayOfMonth = DateTime(now.year, now.month + 1, 0);
+
+      final transactions = await _databaseHelper.getTransactionsByDateRange(
+        firstDayOfMonth,
+        lastDayOfMonth,
+      );
+
+      if (transactions.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No transactions found for this month.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      final Workbook workbook = Workbook();
+      final Worksheet sheet = workbook.worksheets[0];
+
+      // Set headers
+      sheet.getRangeByName('A1').setText('Date');
+      sheet.getRangeByName('B1').setText('Description');
+      sheet.getRangeByName('C1').setText('Amount');
+      sheet.getRangeByName('D1').setText('Type');
+      sheet.getRangeByName('E1').setText('Category');
+      sheet.getRangeByName('F1').setText('Payment Method');
+
+      // Add data
+      for (int i = 0; i < transactions.length; i++) {
+        final transaction = transactions[i];
+        final row = i + 2;
+
+        sheet
+            .getRangeByName('A$row')
+            .setDateTime(
+              DateTime.fromMillisecondsSinceEpoch(transaction['date'] as int),
+            );
+        sheet.getRangeByName('B$row').setText(transaction['note'] as String);
+        sheet
+            .getRangeByName('C$row')
+            .setNumber(transaction['amount'] as double);
+        sheet.getRangeByName('D$row').setText(transaction['type'] as String);
+        sheet
+            .getRangeByName('E$row')
+            .setText(transaction['category'] as String);
+        sheet.getRangeByName('F$row').setText('Unknown');
+      }
+
+      // Format headers
+      final headerRange = sheet.getRangeByName('A1:F1');
+      headerRange.cellStyle.backColor = '#4F81BD';
+      headerRange.cellStyle.fontColor = '#FFFFFF';
+      headerRange.cellStyle.bold = true;
+
+      // Auto-fit columns
+      sheet.autoFitColumn(1);
+      sheet.autoFitColumn(2);
+      sheet.autoFitColumn(3);
+      sheet.autoFitColumn(4);
+      sheet.autoFitColumn(5);
+      sheet.autoFitColumn(6);
+
+      final List<int> bytes = workbook.saveAsStream();
+      workbook.dispose();
+
+      final String fileName =
+          'FinFlow_Monthly_${now.year}_${now.month.toString().padLeft(2, '0')}.xlsx';
+      final Directory directory = await getApplicationDocumentsDirectory();
+      final String filePath = '${directory.path}/$fileName';
+
+      final File file = File(filePath);
+      await file.writeAsBytes(bytes);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Monthly Excel export completed!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // Open the file
+      await OpenFile.open(filePath);
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export failed: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
