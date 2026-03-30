@@ -57,6 +57,10 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             // Uncomment the following line to use your release signing config
             // signingConfig = signingConfigs.release
+            
+            // Enable code shrinking for release build only
+            isMinifyEnabled = true
+            isShrinkResources = true
         }
     }
 }

@@ -1,0 +1,46 @@
+// Firestore Security Rules for FinFlow
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Allow only authenticated users to access the database
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Users collection - each user can only access their own document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Transactions collection - users can only access their own transactions
+    match /transactions/{transactionId} {
+      allow read, write: if request.auth != null && 
+                          request.auth.uid == resource.data.userId;
+    }
+    
+    // Categories collection - users can only access their own categories
+    match /categories/{categoryId} {
+      allow read, write: if request.auth != null && 
+                          request.auth.uid == resource.data.userId;
+    }
+    
+    // Savings goals collection - users can only access their own goals
+    match /savings_goals/{goalId} {
+      allow read, write: if request.auth != null && 
+                          request.auth.uid == resource.data.userId;
+    }
+    
+    // Budgets collection - users can only access their own budgets
+    match /budgets/{budgetId} {
+      allow read, write: if request.auth != null && 
+                          request.auth.uid == resource.data.userId;
+    }
+    
+    // App settings collection - users can only access their own settings
+    match /app_settings/{settingId} {
+      allow read, write: if request.auth != null && 
+                          request.auth.uid == resource.data.userId;
+    }
+  }
+}

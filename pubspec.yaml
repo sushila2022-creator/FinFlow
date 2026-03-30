@@ -20,6 +20,7 @@ dependencies:
   permission_handler: ^11.3.1
   flutter_sms_inbox: ^1.0.4
   cupertino_icons: ^1.0.8
+  in_app_review: ^2.0.8
   google_fonts: ^6.2.1
   flutter_slidable: ^4.0.3
   provider: ^6.1.5+1
@@ -38,10 +39,8 @@ dependencies:
   cloud_firestore: ^5.6.0
   google_sign_in: ^6.2.0
   sign_in_with_apple: ^6.1.0
-  math_expressions: ^2.6.0
   url_launcher: ^6.3.0
   uuid: ^4.5.1
-  vector_math: ^2.1.4
   image: ^4.2.0
   syncfusion_flutter_xlsio: 32.2.3
   open_file: ^3.3.2
@@ -59,6 +58,9 @@ flutter_icons:
   android: true
   ios: true
   image_path: "assets/icon/icon.png"
+  background_color: "#0D2B45"
+  adaptive_icon_background: "#0D2B45"
+  adaptive_icon_foreground: "assets/icon/icon.png"
 
 flutter:
   uses-material-design: true
@@ -66,4 +68,4 @@ flutter:
     - assets/
     - assets/icon/
     - assets/google_icon.svg
-    - assets/splash screen.png
+    - assets/splash_screen.png
