@@ -36,7 +36,7 @@ class FinFlowApp extends StatelessWidget {
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
           return MaterialApp(
-            title: '',
+            title: 'FinFlow',
             theme: AppTheme.theme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,

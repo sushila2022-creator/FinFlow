@@ -1,11 +1,13 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
-import '../widgets/professional_app_icon.dart';
 import 'main_wrapper.dart';
 import 'welcome_screen.dart';
 
+/// SplashScreen acts as a pass-through screen that immediately checks
+/// authentication status and navigates to the appropriate screen.
+/// The native splash screen (configured via flutter_native_splash) handles
+/// the visual splash experience - this screen only handles routing logic.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -17,7 +19,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // Use WidgetsBinding.instance.addPostFrameCallback to avoid setState during build
+    // Immediately check authentication and navigate - no delay, no animation
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAuthentication();
     });
@@ -29,66 +31,34 @@ class _SplashScreenState extends State<SplashScreen> {
     // Check authentication status
     await userProvider.checkAuthStatus();
 
-    // Limit splash duration to 1.5 seconds maximum
-    await Future.delayed(const Duration(milliseconds: 1500));
-
     // Check if widget is still mounted before navigating
     if (!mounted) return;
 
-    // Check if user is authenticated
-    if (userProvider.currentUser != null) {
-      // User is authenticated, navigate to main app
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MainWrapper()),
-        );
-      }
-    } else {
-      // User is not authenticated, navigate to onboarding/welcome screen
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const WelcomeScreen()),
-        );
-      }
+    // Navigate immediately to the appropriate screen (no animation)
+    final nextScreen = userProvider.currentUser != null
+        ? const MainWrapper()
+        : const WelcomeScreen();
+
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) => nextScreen,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            // No transition animation - instant switch
+            return child;
+          },
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+        ),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A2540), // Dark professional background
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Professional app icon
-            ProfessionalAppIcon(size: 140, animate: true),
-
-            const SizedBox(height: 24),
-
-            // App name
-            const Text(
-              'FinFlow',
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-                fontFamily: 'Plus Jakarta Sans',
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            // Tagline
-            const Text(
-              'Professional Finance Management',
-              style: TextStyle(fontSize: 14, color: Colors.white70),
-            ),
-          ],
-        ),
-      ),
-    );
+    // Return an empty scaffold - native splash screen handles the visuals
+    // This screen is just a pass-through for routing logic
+    return const Scaffold(backgroundColor: Color(0xFF0A2540));
   }
 }

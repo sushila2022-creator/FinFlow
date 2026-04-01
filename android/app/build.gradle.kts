@@ -40,23 +40,18 @@ android {
         multiDexEnabled = true
     }
 
-    // Add this for signing configurations
-    // signingConfigs {
-    //     release {
-    //         storeFile = file(keystoreProperties['storeFile'])
-    //         storePassword = keystoreProperties['storePassword']
-    //         keyAlias = keystoreProperties['keyAlias']
-    //         keyPassword = keystoreProperties['keyPassword']
-    //     }
-    // }
+    signingConfigs {
+        create("release") {
+            storeFile = file("../../finflow-key.jks")
+            keyAlias = "finflow"
+            storePassword = System.getenv("STORE_PASSWORD") ?: ""  // Set manually or via environment variable
+            keyPassword = System.getenv("KEY_PASSWORD") ?: ""      // Set manually or via environment variable
+        }
+    }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
-            // Uncomment the following line to use your release signing config
-            // signingConfig = signingConfigs.release
+            signingConfig = signingConfigs.getByName("release")
             
             // Enable code shrinking for release build only
             isMinifyEnabled = true

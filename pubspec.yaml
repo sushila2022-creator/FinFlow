@@ -44,6 +44,7 @@ dependencies:
   image: ^4.2.0
   syncfusion_flutter_xlsio: 32.2.3
   open_file: ^3.3.2
+  flutter_native_splash: ^2.4.7
 
 dev_dependencies:
   flutter_test:
@@ -69,3 +70,12 @@ flutter:
     - assets/icon/
     - assets/google_icon.svg
     - assets/splash_screen.png
+
+flutter_native_splash:
+  color: "#0D2B45"
+  image: assets/splash_screen.png
+  android: true
+  ios: true
+  android_12:
+    color: "#0D2B45"
+    image: assets/splash_screen.png
