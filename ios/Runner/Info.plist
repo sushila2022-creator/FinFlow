@@ -52,7 +52,7 @@
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>This app needs access to the photo library to select pictures of receipts.</string>
 		<key>UIStatusBarHidden</key>
-		<false/>
+		<true/>
 		<!-- Full screen configuration -->
 		<key>UIStatusBarStyle</key>
 		<string>UIStatusBarStyleLightContent</string>

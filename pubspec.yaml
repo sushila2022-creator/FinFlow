@@ -69,13 +69,12 @@ flutter:
     - assets/
     - assets/icon/
     - assets/google_icon.svg
-    - assets/splash_screen.png
 
 flutter_native_splash:
   color: "#0D2B45"
-  image: assets/splash_screen.png
-  android: true
-  ios: true
+  android: false
+  ios: false
+  web: false
   android_12:
     color: "#0D2B45"
-    image: assets/splash_screen.png
+    icon_background_color: "#0D2B45"

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
 import 'main_wrapper.dart';
-import 'welcome_screen.dart';
+import 'login_screen.dart';
 
 /// SplashScreen acts as a pass-through screen that immediately checks
 /// authentication status and navigates to the appropriate screen.
@@ -19,33 +20,51 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // Immediately check authentication and navigate - no delay, no animation
+    // Delay navigation by 2-3 seconds to show splash UI
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAuthentication();
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          _checkAuthentication();
+        }
+      });
     });
   }
 
   Future<void> _checkAuthentication() async {
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final prefs = await SharedPreferences.getInstance();
 
-    // Check authentication status
-    await userProvider.checkAuthStatus();
-
-    // Check if widget is still mounted before navigating
     if (!mounted) return;
 
-    // Navigate immediately to the appropriate screen (no animation)
-    final nextScreen = userProvider.currentUser != null
-        ? const MainWrapper()
-        : const WelcomeScreen();
+    // Check if user is already logged in (has_logged_in flag)
+    final hasLoggedIn = prefs.getBool('has_logged_in') ?? false;
 
-    if (mounted) {
+    if (hasLoggedIn) {
+      // User is already logged in, go to main app
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      await userProvider.checkAuthStatus();
+
+      if (!mounted) return;
+
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) => nextScreen,
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              const MainWrapper(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            // No transition animation - instant switch
+            return child;
+          },
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+        ),
+      );
+    } else {
+      // Not first time, but not logged in, show login screen
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              const LoginScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return child;
           },
           transitionDuration: Duration.zero,
@@ -57,8 +76,16 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Return an empty scaffold - native splash screen handles the visuals
-    // This screen is just a pass-through for routing logic
-    return const Scaffold(backgroundColor: Color(0xFF0A2540));
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D2B45), // Dark navy blue background
+      body: Center(
+        child: Image.asset(
+          'assets/splash_screen.png',
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        ),
+      ),
+    );
   }
 }

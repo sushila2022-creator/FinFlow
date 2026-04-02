@@ -2,15 +2,15 @@
 <resources>
     <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is on -->
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
-        <!-- Set white background to prevent white flash and match app theme -->
-        <item name="android:windowBackground">@android:color/white</item>
+        <!-- Match app theme with dark navy blue background -->
+        <item name="android:windowBackground">#0D2B45</item>
         <item name="android:windowIsTranslucent">false</item>
         <!-- Full screen configuration -->
         <item name="android:windowTranslucentStatus">false</item>
         <item name="android:windowTranslucentNavigation">false</item>
         <item name="android:forceDarkAllowed">false</item>
-        <item name="android:windowFullscreen">false</item>
-        <item name="android:windowDrawsSystemBarBackgrounds">false</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has started.

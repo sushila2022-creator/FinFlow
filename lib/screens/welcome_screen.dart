@@ -197,6 +197,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -214,8 +217,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24.0),
               child: Column(
                 children: [
-                  const SizedBox(height: 20),
-                  // Logo Branding (Image 1 Style)
+                  SizedBox(height: screenHeight * 0.03),
+                  // Logo Branding
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
@@ -232,18 +235,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     child: Text(
                       'FinFlow',
                       style: GoogleFonts.plusJakartaSans(
-                        fontSize: 28,
+                        fontSize: screenWidth < 360 ? 24 : 28,
                         fontWeight: FontWeight.w800,
                         color: Colors.white,
                         letterSpacing: -0.5,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  SizedBox(height: screenHeight * 0.03),
                   Text(
                     'Secure Login',
                     style: GoogleFonts.plusJakartaSans(
-                      fontSize: 28,
+                      fontSize: screenWidth < 360 ? 24 : 28,
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
                       letterSpacing: -0.5,
@@ -258,7 +261,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       fontWeight: FontWeight.w400,
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  SizedBox(height: screenHeight * 0.03),
+
                   // Centered Card (Glassmorphism Style)
                   Container(
                     width: double.infinity,
@@ -534,7 +538,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 40),
+                  SizedBox(height: screenHeight * 0.05),
                 ],
               ),
             ),

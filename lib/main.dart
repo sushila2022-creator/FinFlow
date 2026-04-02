@@ -7,6 +7,7 @@ import 'package:finflow/screens/welcome_screen.dart';
 import 'package:finflow/screens/login_screen.dart';
 import 'package:finflow/screens/add_transaction_screen.dart';
 import 'package:finflow/screens/splash_screen.dart';
+import 'package:finflow/screens/signup_screen.dart';
 import 'package:finflow/providers/transaction_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
@@ -45,6 +46,7 @@ class FinFlowApp extends StatelessWidget {
               '/home': (context) => const MainWrapper(),
               '/welcome': (context) => const WelcomeScreen(),
               '/login': (context) => const LoginScreen(),
+              '/signup': (context) => const SignupScreen(),
               '/add_transaction': (context) => const AddTransactionScreen(),
             },
             debugShowCheckedModeBanner: false,
