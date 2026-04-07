@@ -1,0 +1,10 @@
+{
+  "projects": {
+    "default": "finflow-a7bc8"
+  },
+  "targets": {
+    "finflow-a7bc8": {
+      "hosting": {}
+    }
+  }
+}

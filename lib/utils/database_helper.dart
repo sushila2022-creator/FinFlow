@@ -26,7 +26,7 @@ class DatabaseHelper {
     const intType = 'INTEGER DEFAULT 0';
 
     await db.execute(
-      'CREATE TABLE transactions (id $idType, amount $realType, category $textType, date $textType, note $textType, is_recurring $intType)',
+      'CREATE TABLE transactions (id $idType, title $textType, description $textType, amount $realType, currencyCode $textType, date $textType, category $textType, categoryId $intType, isIncome $intType, accountId $intType, notes $textType, isRecurring $intType, recurrenceFrequency $textType, recurrenceEndDate $textType, attachmentPath $textType)',
     );
     await db.execute(
       'CREATE TABLE categories (id $idType, name $textType, type $textType, icon $textType, color $textType, budget_limit $realType DEFAULT 0.0)',

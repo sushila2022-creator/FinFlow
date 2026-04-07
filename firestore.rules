@@ -1,4 +1,3 @@
-// Firestore Security Rules for FinFlow
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -10,37 +9,88 @@ service cloud.firestore {
     
     // Users collection - each user can only access their own document
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Users can read their own document
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Users can create their own document with restricted fields
+      allow create: if request.auth != null && request.auth.uid == userId 
+                    && !request.resource.data.keys().hasAny([
+                      'isPremium', 
+                      'premiumExpiry', 
+                      'purchaseToken', 
+                      'premiumGrantedAt', 
+                      'lastPurchaseToken', 
+                      'premiumSource',
+                      'productId'
+                    ]);
+      
+      // Users can update their own document but CANNOT modify premium-related fields
+      // Premium fields can only be updated by Cloud Functions (admin SDK)
+      allow update: if request.auth != null && request.auth.uid == userId 
+                    && request.resource.data.keys().hasNone([
+                      'isPremium', 
+                      'premiumExpiry', 
+                      'purchaseToken', 
+                      'premiumGrantedAt', 
+                      'lastPurchaseToken', 
+                      'premiumSource',
+                      'productId'
+                    ]);
     }
     
     // Transactions collection - users can only access their own transactions
     match /transactions/{transactionId} {
-      allow read, write: if request.auth != null && 
-                          request.auth.uid == resource.data.userId;
+      // Allow create if the userId in the new document matches the authenticated user
+      allow create: if request.auth != null && 
+                    request.auth.uid == request.resource.data.userId;
+      
+      // Allow read, update, delete if the existing document's userId matches the authenticated user
+      allow read, update, delete: if request.auth != null && 
+                                  request.auth.uid == resource.data.userId;
     }
     
     // Categories collection - users can only access their own categories
     match /categories/{categoryId} {
-      allow read, write: if request.auth != null && 
-                          request.auth.uid == resource.data.userId;
+      // Allow create if the userId in the new document matches the authenticated user
+      allow create: if request.auth != null && 
+                    request.auth.uid == request.resource.data.userId;
+      
+      // Allow read, update, delete if the existing document's userId matches the authenticated user
+      allow read, update, delete: if request.auth != null && 
+                                  request.auth.uid == resource.data.userId;
     }
     
     // Savings goals collection - users can only access their own goals
     match /savings_goals/{goalId} {
-      allow read, write: if request.auth != null && 
-                          request.auth.uid == resource.data.userId;
+      // Allow create if the userId in the new document matches the authenticated user
+      allow create: if request.auth != null && 
+                    request.auth.uid == request.resource.data.userId;
+      
+      // Allow read, update, delete if the existing document's userId matches the authenticated user
+      allow read, update, delete: if request.auth != null && 
+                                  request.auth.uid == resource.data.userId;
     }
     
     // Budgets collection - users can only access their own budgets
     match /budgets/{budgetId} {
-      allow read, write: if request.auth != null && 
-                          request.auth.uid == resource.data.userId;
+      // Allow create if the userId in the new document matches the authenticated user
+      allow create: if request.auth != null && 
+                    request.auth.uid == request.resource.data.userId;
+      
+      // Allow read, update, delete if the existing document's userId matches the authenticated user
+      allow read, update, delete: if request.auth != null && 
+                                  request.auth.uid == resource.data.userId;
     }
     
     // App settings collection - users can only access their own settings
     match /app_settings/{settingId} {
-      allow read, write: if request.auth != null && 
-                          request.auth.uid == resource.data.userId;
+      // Allow create if the userId in the new document matches the authenticated user
+      allow create: if request.auth != null && 
+                    request.auth.uid == request.resource.data.userId;
+      
+      // Allow read, update, delete if the existing document's userId matches the authenticated user
+      allow read, update, delete: if request.auth != null && 
+                                  request.auth.uid == resource.data.userId;
     }
   }
 }

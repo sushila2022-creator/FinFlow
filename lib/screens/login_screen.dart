@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:finflow/screens/main_wrapper.dart';
 import 'package:provider/provider.dart';
 import 'package:finflow/providers/user_provider.dart';
+import 'package:finflow/utils/debug_logger.dart';
 
+/// LoginScreen - Email/password login screen
+///
+/// Key changes:
+/// - Removed SharedPreferences-based login flags
+/// - FirebaseAuth.instance.currentUser is the single source of truth
+/// - Navigation is handled by AuthWrapper via auth state changes
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -45,21 +50,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    // Capture provider before async operations
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-
     try {
+      // Sign in with Firebase Auth
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      // Save login status for persistence
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('has_logged_in', true);
+      logDebug('Login successful: $email');
 
       // Refresh user state in provider
-      await userProvider.refreshUser();
+      if (mounted) {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        await userProvider.refreshUser();
+      }
 
       if (!mounted) return;
 
@@ -76,15 +80,8 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
 
-      // Navigate to main wrapper with a small delay to show success message
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const MainWrapper()),
-          );
-        }
-      });
+      // Navigation is handled by AuthWrapper via auth state changes
+      // No manual navigation needed
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
 
@@ -129,6 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
+      logError('Login failed', error: e);
       if (!mounted) return;
 
       if (mounted) {

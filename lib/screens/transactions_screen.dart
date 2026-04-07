@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:finflow/providers/transaction_provider.dart';
+import 'package:finflow/providers/transaction_provider.dart'
+    show TransactionProvider, UserNotAuthenticatedException;
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/models/transaction.dart';
 import 'package:finflow/utils/app_theme.dart';
@@ -555,14 +556,51 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               context,
               listen: false,
             );
-            await transactionProvider.deleteTransaction(transaction.id);
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Transaction deleted successfully'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+            try {
+              await transactionProvider.deleteTransaction(transaction.id);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Transaction deleted successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            } on UserNotAuthenticatedException catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(e.message),
+                    backgroundColor: AppTheme.expenseColor,
+                    action: SnackBarAction(
+                      label: 'Login',
+                      textColor: Colors.white,
+                      onPressed: () {
+                        if (mounted) {
+                          Navigator.pushNamedAndRemoveUntil(
+                            context,
+                            '/login',
+                            (route) => false,
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                );
+              }
+              return false;
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Error deleting transaction: ${e.toString()}',
+                    ),
+                    backgroundColor: AppTheme.expenseColor,
+                  ),
+                );
+              }
+              return false;
             }
           }
           return shouldDelete ?? false;

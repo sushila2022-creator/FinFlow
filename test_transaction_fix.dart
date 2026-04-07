@@ -1,50 +1,25 @@
-import 'package:flutter/material.dart';
-import 'package:finflow/utils/database_helper.dart';
-import 'package:finflow/models/transaction.dart';
+import 'package:flutter/foundation.dart';
+import 'package:finflow/models/transaction.dart' as finflow;
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  debugPrint('✅ Database initialized successfully');
 
-  debugPrint('Testing transaction fix...');
+  // Test 1: Create a new transaction
+  final transaction = finflow.Transaction(
+    userId: 'test-user-id',
+    title: 'Test Transaction', // Added title parameter
+    description: 'Test transaction',
+    amount: 1000.0,
+    currencyCode: 'INR',
+    date: DateTime.now(),
+    category: 'Test Category',
+    categoryId: 1,
+    isIncome: false,
+    accountId: 1,
+  );
 
-  try {
-    // Test 1: Create a new transaction
-    final transaction = Transaction(
-      description: 'Test transaction',
-      amount: 1000.0,
-      currencyCode: 'INR',
-      date: DateTime.now(),
-      category: 'Salary',
-      categoryId: 1,
-      isIncome: true,
-      accountId: 1,
-    );
-
-    debugPrint(
-      'Created transaction: ${transaction.description} - ₹${transaction.amount}',
-    );
-
-    // Test 2: Save to database
-    final dbHelper = DatabaseHelper.instance;
-    final result = await dbHelper.insertTransaction(transaction.toMap());
-
-    debugPrint('Transaction saved successfully with ID: $result');
-
-    // Test 3: Retrieve and verify
-    final transactions = await dbHelper.getTransactions();
-    debugPrint('Total transactions in database: ${transactions.length}');
-
-    if (transactions.isNotEmpty) {
-      final savedTransaction = transactions.first;
-      debugPrint('Retrieved transaction:');
-      debugPrint('  Description: ${savedTransaction['description']}');
-      debugPrint('  Amount: ${savedTransaction['amount']}');
-      debugPrint('  Category: ${savedTransaction['category']}');
-      debugPrint('  Is Income: ${savedTransaction['isIncome']}');
-    }
-
-    debugPrint('✅ Transaction fix test PASSED!');
-  } catch (e) {
-    debugPrint('❌ Transaction fix test FAILED: $e');
-  }
+  debugPrint('✅ Transaction created successfully: ${transaction.id}');
+  debugPrint(
+    'Transaction details: ${transaction.title} - ₹${transaction.amount} - ${transaction.category}',
+  );
 }

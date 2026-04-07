@@ -4,8 +4,8 @@ import 'package:finflow/providers/theme_provider.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:finflow/services/iap_service.dart';
 
 class PremiumScreen extends StatefulWidget {
   const PremiumScreen({super.key});
@@ -14,64 +14,139 @@ class PremiumScreen extends StatefulWidget {
   PremiumScreenState createState() => PremiumScreenState();
 }
 
-class PremiumScreenState extends State<PremiumScreen> {
+class PremiumScreenState extends State<PremiumScreen>
+    with WidgetsBindingObserver {
   bool _isLoading = false;
+  bool _isIAPInitializing = false;
+  String? _errorMessage;
+  ProductDetails? _selectedProduct;
 
-  Future<void> _upgradeToPremium() async {
-    // Capture context before any async operation or potential `await` calls
-    final localContext = context;
+  final IAPService _iapService = IAPService();
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initializeIAP();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // Re-check premium status when app resumes
+    if (state == AppLifecycleState.resumed) {
+      _checkPremiumStatus();
+    }
+  }
+
+  Future<void> _initializeIAP() async {
     setState(() {
-      _isLoading = true;
+      _isIAPInitializing = true;
     });
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .update({'isPremium': true});
+      // Initialize IAP service
+      final bool isAvailable = await _iapService.initialize();
 
-        // Since context cannot be used across async gaps without `mounted` checks (which are disallowed),
-        // and the goal is to permanently fix warnings without `mounted` checks, we must restructure.
-        // The user provider refresh and UI feedback should ideally happen at a point where context is guaranteed to be valid
-        // or handled in a way that doesn't require direct context access after an await. For this task, given the constraints,
-        // we will proceed with the current structure which captures context at the top and uses it, which is the direct
-        // interpretation of the initial instruction "Store context in a local variable BEFORE any async operation like this: final ctx = context; Use ctx instead of context everywhere after async calls".
-        // However, the analyzer continues to flag this as a warning. To fully eliminate the warning without `mounted`,
-        // more significant architectural changes would be required (e.g., passing callbacks, using a global key, or redesigning the state management
-        // to not require BuildContext for these post-async operations), which is beyond the scope of a direct code fix
-        // under the given constraints.
-        // For now, adhering strictly to the prompt:
+      if (isAvailable) {
+        // Fetch products
+        await _iapService.fetchProducts();
 
-        // Refresh user data in provider using the captured context
-        // No need for mounted check as context is captured at the start of the async function.
-        Provider.of<UserProvider>(localContext, listen: false).refreshUser();
-
-        // Use captured context for UI operations
-        ScaffoldMessenger.of(localContext).showSnackBar(
-          const SnackBar(
-            content: Text("Successfully upgraded to Premium!"),
-            backgroundColor: Colors.green,
-          ),
+        // Select the monthly product by default
+        final monthlyProduct = _iapService.getProductById(
+          IAPService.premiumMonthlyProductId,
         );
-
-        // Navigate back to settings
-        Navigator.pop(localContext, true);
+        if (monthlyProduct != null) {
+          setState(() {
+            _selectedProduct = monthlyProduct;
+          });
+        }
+      } else {
+        setState(() {
+          _errorMessage = _iapService.connectionError ?? 'IAP not available';
+        });
       }
     } catch (e) {
-      // Use captured context for UI operations in case of an error
-      ScaffoldMessenger.of(localContext).showSnackBar(
-        SnackBar(
-          content: Text("Upgrade failed: ${e.toString()}"),
-          backgroundColor: Colors.red,
-        ),
-      );
+      setState(() {
+        _errorMessage = 'Failed to initialize purchases: ${e.toString()}';
+      });
     } finally {
       setState(() {
-        _isLoading = false;
+        _isIAPInitializing = false;
       });
+    }
+  }
+
+  Future<void> _checkPremiumStatus() async {
+    // Refresh user data from Firestore
+    await Provider.of<UserProvider>(context, listen: false).refreshUser();
+  }
+
+  Future<void> _purchaseProduct(ProductDetails product) async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final success = await _iapService.purchaseProduct(product);
+
+      if (!success && mounted) {
+        setState(() {
+          _errorMessage = _iapService.statusMessage ?? 'Purchase failed';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Purchase error: ${e.toString()}';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _restorePurchases() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final success = await _iapService.restorePurchases();
+
+      if (success && mounted) {
+        // Wait a bit for the restore to complete and check status
+        await Future.delayed(const Duration(seconds: 2));
+        await _checkPremiumStatus();
+      } else if (mounted) {
+        setState(() {
+          _errorMessage = _iapService.statusMessage ?? 'Restore failed';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Restore error: ${e.toString()}';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -80,12 +155,15 @@ class PremiumScreenState extends State<PremiumScreen> {
     final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
     final currentUser = Provider.of<UserProvider>(context).currentUser;
 
+    // Check if user is already premium
+    final bool isPremium = currentUser?.isPremium == true;
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: const Color(0xFF0D2B45),
         title: Text(
-          'Upgrade to Premium',
+          isPremium ? 'Premium Status' : 'Upgrade to Premium',
           style: GoogleFonts.plusJakartaSans(
             fontWeight: FontWeight.w800,
             color: Colors.white,
@@ -119,7 +197,7 @@ class PremiumScreenState extends State<PremiumScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Go Premium',
+                          isPremium ? 'You are Premium!' : 'Go Premium',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -127,7 +205,9 @@ class PremiumScreenState extends State<PremiumScreen> {
                           ),
                         ),
                         Text(
-                          'Unlock all features and take control of your finances',
+                          isPremium
+                              ? 'Enjoy all premium features!'
+                              : 'Unlock all features and take control of your finances',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             color: Colors.white70,
@@ -155,18 +235,14 @@ class PremiumScreenState extends State<PremiumScreen> {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: currentUser?.isPremium == true
+                        color: isPremium
                             ? const Color(0xFFFFD700)
                             : const Color(0xFFE0E0E0),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Icon(
-                        currentUser?.isPremium == true
-                            ? Icons.check_circle
-                            : Icons.lock,
-                        color: currentUser?.isPremium == true
-                            ? Colors.white
-                            : Colors.black87,
+                        isPremium ? Icons.check_circle : Icons.lock,
+                        color: isPremium ? Colors.white : Colors.black87,
                         size: 20,
                       ),
                     ),
@@ -176,7 +252,7 @@ class PremiumScreenState extends State<PremiumScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            currentUser?.isPremium == true
+                            isPremium
                                 ? 'You are a Premium User'
                                 : 'Current Plan: Free',
                             style: GoogleFonts.plusJakartaSans(
@@ -188,7 +264,7 @@ class PremiumScreenState extends State<PremiumScreen> {
                             ),
                           ),
                           Text(
-                            currentUser?.isPremium == true
+                            isPremium
                                 ? 'Enjoy all premium features!'
                                 : 'Upgrade to unlock premium features',
                             style: GoogleFonts.plusJakartaSans(
@@ -207,62 +283,170 @@ class PremiumScreenState extends State<PremiumScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Premium Features
-            Text(
-              'PREMIUM FEATURES',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: isDarkMode
-                    ? AppTheme.textSecondaryDark
-                    : AppTheme.textSecondaryLight,
-                letterSpacing: 1.2,
+            // Error message
+            if (_errorMessage != null)
+              Card(
+                color: Colors.red.shade50,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: Colors.red.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(color: Colors.red.shade700),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () {
+                          setState(() {
+                            _errorMessage = null;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
 
-            _buildFeatureCard(
-              icon: Icons.sms,
-              title: 'Smart SMS Scan',
-              description:
-                  'Automatically detect and import bank transaction SMS',
-              isPremium: true,
-            ),
-            _buildFeatureCard(
-              icon: Icons.analytics,
-              title: 'Advanced Analytics',
-              description: 'Detailed spending insights and trend analysis',
-              isPremium: true,
-            ),
-            _buildFeatureCard(
-              icon: Icons.backup,
-              title: 'Cloud Backup',
-              description: 'Automatic backup and sync across devices',
-              isPremium: true,
-            ),
-            _buildFeatureCard(
-              icon: Icons.notifications,
-              title: 'Smart Notifications',
-              description: 'Personalized financial alerts and reminders',
-              isPremium: true,
-            ),
-            _buildFeatureCard(
-              icon: Icons.category,
-              title: 'Unlimited Categories',
-              description: 'Create unlimited custom categories and tags',
-              isPremium: true,
-            ),
-            _buildFeatureCard(
-              icon: Icons.security,
-              title: 'Enhanced Security',
-              description: 'Biometric authentication and data encryption',
-              isPremium: true,
-            ),
+            // IAP initializing indicator
+            if (_isIAPInitializing)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
 
-            const SizedBox(height: 32),
+            // Premium Features (only show when not premium and IAP is ready)
+            if (!_isIAPInitializing && !isPremium) ...[
+              // Product Selection
+              Text(
+                'CHOOSE YOUR PLAN',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: isDarkMode
+                      ? AppTheme.textSecondaryDark
+                      : AppTheme.textSecondaryLight,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const SizedBox(height: 12),
 
-            // Upgrade Button
-            if (currentUser?.isPremium != true)
+              // Monthly plan card
+              _buildProductCard(
+                product: _iapService.products.firstWhere(
+                  (p) => p.id == IAPService.premiumMonthlyProductId,
+                  orElse: () => ProductDetails(
+                    id: IAPService.premiumMonthlyProductId,
+                    title: 'Premium Monthly',
+                    description: 'Monthly subscription',
+                    price: '\$4.99',
+                    rawPrice: 4.99,
+                    currencyCode: 'USD',
+                    currencySymbol: '\$',
+                  ),
+                ),
+                isSelected:
+                    _selectedProduct?.id == IAPService.premiumMonthlyProductId,
+                onTap: () {
+                  setState(() {
+                    _selectedProduct = _iapService.getProductById(
+                      IAPService.premiumMonthlyProductId,
+                    );
+                  });
+                },
+                isDarkMode: isDarkMode,
+              ),
+
+              // Yearly plan card (if available)
+              if (_iapService.products.any(
+                (p) => p.id == IAPService.premiumYearlyProductId,
+              ))
+                _buildProductCard(
+                  product: _iapService.products.firstWhere(
+                    (p) => p.id == IAPService.premiumYearlyProductId,
+                  ),
+                  isSelected:
+                      _selectedProduct?.id == IAPService.premiumYearlyProductId,
+                  onTap: () {
+                    setState(() {
+                      _selectedProduct = _iapService.getProductById(
+                        IAPService.premiumYearlyProductId,
+                      );
+                    });
+                  },
+                  isDarkMode: isDarkMode,
+                  badge: 'BEST VALUE',
+                ),
+
+              const SizedBox(height: 24),
+
+              // Premium Features List
+              Text(
+                'PREMIUM FEATURES',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: isDarkMode
+                      ? AppTheme.textSecondaryDark
+                      : AppTheme.textSecondaryLight,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              _buildFeatureCard(
+                icon: Icons.sms,
+                title: 'Smart SMS Scan',
+                description:
+                    'Automatically detect and import bank transaction SMS',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+              _buildFeatureCard(
+                icon: Icons.analytics,
+                title: 'Advanced Analytics',
+                description: 'Detailed spending insights and trend analysis',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+              _buildFeatureCard(
+                icon: Icons.backup,
+                title: 'Cloud Backup',
+                description: 'Automatic backup and sync across devices',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+              _buildFeatureCard(
+                icon: Icons.notifications,
+                title: 'Smart Notifications',
+                description: 'Personalized financial alerts and reminders',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+              _buildFeatureCard(
+                icon: Icons.category,
+                title: 'Unlimited Categories',
+                description: 'Create unlimited custom categories and tags',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+              _buildFeatureCard(
+                icon: Icons.security,
+                title: 'Enhanced Security',
+                description: 'Biometric authentication and data encryption',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+
+              const SizedBox(height: 32),
+
+              // Purchase Button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -279,11 +463,13 @@ class PremiumScreenState extends State<PremiumScreen> {
                     elevation: 4,
                     shadowColor: const Color(0xFFFFD700).withValues(alpha: 0.3),
                   ),
-                  onPressed: _isLoading ? null : _upgradeToPremium,
+                  onPressed: _isLoading || _selectedProduct == null
+                      ? null
+                      : () => _purchaseProduct(_selectedProduct!),
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.black)
                       : Text(
-                          'Upgrade to Premium - Free',
+                          'Subscribe - ${_selectedProduct?.price ?? 'Loading...'}',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -292,10 +478,26 @@ class PremiumScreenState extends State<PremiumScreen> {
                 ),
               ),
 
-            const SizedBox(height: 24),
+              const SizedBox(height: 16),
 
-            // Benefits Summary
-            if (currentUser?.isPremium != true)
+              // Restore Purchases Button
+              TextButton.icon(
+                onPressed: _isLoading ? null : _restorePurchases,
+                icon: const Icon(Icons.restore, size: 18),
+                label: Text(
+                  'Restore Purchases',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    color: isDarkMode
+                        ? AppTheme.textSecondaryDark
+                        : AppTheme.textSecondaryLight,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Benefits Summary
               Card(
                 elevation: 2,
                 shape: RoundedRectangleBorder(
@@ -317,16 +519,167 @@ class PremiumScreenState extends State<PremiumScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      _buildBenefitRow('✓', 'All premium features unlocked'),
-                      _buildBenefitRow('✓', 'No ads'),
-                      _buildBenefitRow('✓', 'Priority support'),
-                      _buildBenefitRow('✓', 'Regular updates'),
+                      _buildBenefitRow(
+                        '✓',
+                        'All premium features unlocked',
+                        isDarkMode,
+                      ),
+                      _buildBenefitRow('✓', 'Cancel anytime', isDarkMode),
+                      _buildBenefitRow('✓', 'Priority support', isDarkMode),
+                      _buildBenefitRow('✓', 'Regular updates', isDarkMode),
                     ],
                   ),
                 ),
               ),
+            ],
+
+            // Show when already premium
+            if (isPremium) ...[
+              const SizedBox(height: 24),
+              _buildFeatureCard(
+                icon: Icons.sms,
+                title: 'Smart SMS Scan',
+                description:
+                    'Automatically detect and import bank transaction SMS',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+              _buildFeatureCard(
+                icon: Icons.analytics,
+                title: 'Advanced Analytics',
+                description: 'Detailed spending insights and trend analysis',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+              _buildFeatureCard(
+                icon: Icons.backup,
+                title: 'Cloud Backup',
+                description: 'Automatic backup and sync across devices',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+              _buildFeatureCard(
+                icon: Icons.notifications,
+                title: 'Smart Notifications',
+                description: 'Personalized financial alerts and reminders',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+              _buildFeatureCard(
+                icon: Icons.category,
+                title: 'Unlimited Categories',
+                description: 'Create unlimited custom categories and tags',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+              _buildFeatureCard(
+                icon: Icons.security,
+                title: 'Enhanced Security',
+                description: 'Biometric authentication and data encryption',
+                isPremium: true,
+                isDarkMode: isDarkMode,
+              ),
+            ],
 
             const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductCard({
+    required ProductDetails product,
+    required bool isSelected,
+    required VoidCallback onTap,
+    required bool isDarkMode,
+    String? badge,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (isDarkMode ? const Color(0xFF1A3A4A) : const Color(0xFFFFF8E1))
+              : (isDarkMode ? const Color(0xFF1A2A3A) : Colors.white),
+          border: Border.all(
+            color: isSelected ? const Color(0xFFFFD700) : Colors.grey.shade300,
+            width: isSelected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        product.title,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: isDarkMode
+                              ? AppTheme.textPrimaryDark
+                              : AppTheme.textPrimaryLight,
+                        ),
+                      ),
+                      if (badge != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFD700),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            badge,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    product.description,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      color: isDarkMode
+                          ? AppTheme.textSecondaryDark
+                          : AppTheme.textSecondaryLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Text(
+              product.price,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFFFFD700),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              isSelected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
+              color: isSelected ? const Color(0xFFFFD700) : Colors.grey,
+            ),
           ],
         ),
       ),
@@ -338,9 +691,8 @@ class PremiumScreenState extends State<PremiumScreen> {
     required String title,
     required String description,
     required bool isPremium,
+    required bool isDarkMode,
   }) {
-    final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
-
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -402,9 +754,7 @@ class PremiumScreenState extends State<PremiumScreen> {
     );
   }
 
-  Widget _buildBenefitRow(String icon, String text) {
-    final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
-
+  Widget _buildBenefitRow(String icon, String text, bool isDarkMode) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(

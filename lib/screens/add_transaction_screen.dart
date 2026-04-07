@@ -5,11 +5,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:finflow/utils/database_helper.dart';
-import 'package:finflow/providers/transaction_provider.dart';
+import 'package:finflow/providers/transaction_provider.dart'
+    show TransactionProvider, UserNotAuthenticatedException;
 import 'package:finflow/providers/theme_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:finflow/models/transaction.dart';
+import 'package:uuid/uuid.dart';
 
 class AddTransactionScreen extends StatefulWidget {
   final Map<String, dynamic>? transactionToEdit;
@@ -775,6 +777,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
           ),
         );
       }
+      setState(() => _isSaving = false);
       return;
     }
 
@@ -789,19 +792,45 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
     // Find category ID from local database (case-insensitive search)
     final allCategories = await DatabaseHelper.instance.getCategories();
-    if (!mounted) return;
+    if (!mounted) {
+      setState(() => _isSaving = false);
+      return;
+    }
     final matchingCategory = allCategories.firstWhere(
       (c) => c['name'].toLowerCase() == _selectedCategory!.toLowerCase(),
       orElse: () => {'id': 0},
     );
 
     try {
+      // Check authentication using provider's built-in check
+      if (!transactionProvider.isAuthenticated) {
+        throw UserNotAuthenticatedException(
+          'You must be logged in to save transactions',
+        );
+      }
+
+      // Get current user ID from Firebase Auth (guaranteed non-null after auth check)
+      final currentUserId = transactionProvider.currentUserId;
+
+      // If this is from SMS detection, verify the userId matches current user
+      // This prevents cross-user transaction injection attacks
+      if (widget.transactionToEdit != null &&
+          widget.transactionToEdit!.containsKey('userId')) {
+        final detectedUserId = widget.transactionToEdit!['userId'] as String?;
+        if (detectedUserId != null && detectedUserId != currentUserId) {
+          throw UserNotAuthenticatedException(
+            'Transaction user mismatch. Please try again.',
+          );
+        }
+      }
+
       final transactionId = widget.transactionToEdit?['id']?.toString();
 
       if (transactionId != null && transactionId.isNotEmpty) {
         // Update existing transaction
         final transaction = Transaction(
           id: transactionId,
+          userId: currentUserId,
           description: _descController.text,
           amount: amount,
           currencyCode: currencyProvider.currentCurrencyCode,
@@ -816,9 +845,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
         await transactionProvider.updateTransaction(transaction);
       } else {
-        // Add new transaction (even if we have pre-filled data like from SMS)
+        // Add new transaction - use UUID for proper unique ID generation
+        // This ensures consistency with Firestore document ID expectations
+        final newTransactionId = const Uuid().v4();
+
         final transaction = Transaction(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          id: newTransactionId,
+          userId: currentUserId,
           description: _descController.text,
           amount: amount,
           currencyCode: currencyProvider.currentCurrencyCode,
@@ -835,7 +868,32 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       }
 
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context, true); // Return true to indicate success
+    } on UserNotAuthenticatedException catch (e) {
+      // Handle authentication error specifically
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: AppTheme.expenseColor,
+            action: SnackBarAction(
+              label: 'Login',
+              textColor: Colors.white,
+              onPressed: () {
+                if (mounted) {
+                  Navigator.pop(context); // Close add transaction screen
+                  // Navigate to login screen - you may need to adjust the route
+                  Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    '/login',
+                    (route) => false,
+                  );
+                }
+              },
+            ),
+          ),
+        );
+      }
     } catch (e) {
       // Show error in UI, not just terminal
       if (mounted) {

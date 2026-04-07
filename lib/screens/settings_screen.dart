@@ -10,7 +10,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:finflow/services/auth/local_auth_service.dart';
 import 'package:finflow/services/auth/google_auth_service.dart';
 import 'package:finflow/screens/manage_categories_screen.dart';
-import 'package:finflow/screens/welcome_screen.dart';
 import 'package:finflow/utils/database_helper.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
@@ -28,6 +27,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:finflow/screens/premium_screen.dart';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' hide Column;
 import 'package:open_file/open_file.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -99,8 +99,8 @@ class SettingsScreenState extends State<SettingsScreen> {
     SharePlus.instance.share(
       ShareParams(
         text:
-            'Check out FinFlow - Your personal finance management app! Download now and take control of your finances. https://play.google.com/store/apps/details?id=com.finflow.app',
-        subject: 'FinFlow - Personal Finance Management',
+            'Check out FinFlow AI – Money Manager - Your personal finance management app! Download now and take control of your finances. https://play.google.com/store/apps/details?id=com.finflowai.money.manager',
+        subject: 'FinFlow AI – Money Manager - Personal Finance Management',
       ),
     );
   }
@@ -208,7 +208,8 @@ class SettingsScreenState extends State<SettingsScreen> {
     try {
       final dbPath = await getDatabasesPath();
       if (!mounted) return;
-      final dbFilePath = path.join(dbPath, 'FinFlow.db');
+      // FIX: Use the correct database filename that matches DatabaseHelper
+      final dbFilePath = path.join(dbPath, 'finflow_v4.db');
 
       final dbFile = File(dbFilePath);
       if (!await dbFile.exists()) {
@@ -216,7 +217,8 @@ class SettingsScreenState extends State<SettingsScreen> {
       }
       if (!mounted) return;
 
-      final backupFileName = 'finflow_backup.db';
+      final backupFileName =
+          'finflow_backup_${DateTime.now().millisecondsSinceEpoch}.db';
       final tempDir = await getTemporaryDirectory();
       if (!mounted) return;
       final backupPath = path.join(tempDir.path, backupFileName);
@@ -224,11 +226,12 @@ class SettingsScreenState extends State<SettingsScreen> {
       await dbFile.copy(backupPath);
       if (!mounted) return;
 
+      // Use SharePlus to share the backup file
       await SharePlus.instance.share(
         ShareParams(
+          files: [XFile(backupPath, mimeType: 'application/octet-stream')],
           text: 'This is your FinFlow database backup.',
           subject: 'FinFlow Database Backup',
-          files: [XFile(backupPath, mimeType: 'application/octet-stream')],
         ),
       );
 
@@ -309,7 +312,8 @@ class SettingsScreenState extends State<SettingsScreen> {
 
       final dbPath = await getDatabasesPath();
       if (!mounted) return;
-      final dbFilePath = path.join(dbPath, 'FinFlow.db');
+      // FIX: Use the correct database filename that matches DatabaseHelper
+      final dbFilePath = path.join(dbPath, 'finflow_v4.db');
       final currentDbFile = File(dbFilePath);
 
       Database? currentDb = await _databaseHelper.database;
@@ -342,7 +346,7 @@ class SettingsScreenState extends State<SettingsScreen> {
         if (!mounted) return;
         Navigator.of(
           context,
-        ).pushNamedAndRemoveUntil('/splash', (route) => false);
+        ).pushNamedAndRemoveUntil('/welcome', (route) => false);
       });
     } catch (e) {
       if (!mounted) return;
@@ -651,9 +655,10 @@ class SettingsScreenState extends State<SettingsScreen> {
                 'title': 'Privacy Policy',
                 'onTap': () async {
                   try {
-                    await launchUrl(
-                      Uri.parse('https://finflow-privacy-policy.com'),
-                    );
+                    // Privacy policy hosted on Google Sites
+                    final privacyPolicyUrl =
+                        'https://sites.google.com/view/finflow-app-privacy/home';
+                    await launchUrl(Uri.parse(privacyPolicyUrl));
                   } catch (e) {
                     if (!mounted) return;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -669,18 +674,82 @@ class SettingsScreenState extends State<SettingsScreen> {
                 },
               },
               {
+                'icon': Icons.description,
+                'title': 'Terms of Service',
+                'onTap': () async {
+                  try {
+                    // Terms of Service hosted on Google Sites
+                    final termsOfServiceUrl =
+                        'https://sites.google.com/view/finflow-terms-of-service/terms-of-service';
+                    await launchUrl(Uri.parse(termsOfServiceUrl));
+                  } catch (e) {
+                    if (!mounted) return;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Could not launch terms of service'),
+                          ),
+                        );
+                      }
+                    });
+                  }
+                },
+              },
+              {
                 'icon': Icons.star,
                 'title': 'Rate Us',
                 'onTap': () async {
                   try {
+                    final currentUser = Provider.of<UserProvider>(
+                      context,
+                      listen: false,
+                    ).currentUser;
+
+                    // Check if user is premium
+                    if (currentUser?.isPremium != true) {
+                      // Show premium upgrade dialog
+                      if (!mounted) return;
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Unlock Premium Features'),
+                          content: const Text(
+                            'Rating functionality is available for premium users only. '
+                            'Upgrade to premium to access this and other exclusive features.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const PremiumScreen(),
+                                  ),
+                                );
+                              },
+                              child: const Text('Upgrade to Premium'),
+                            ),
+                          ],
+                        ),
+                      );
+                      return;
+                    }
+
                     // Try to open Google Play Store first
-                    final playStoreUrl = 'market://details?id=com.finflow.app';
+                    final playStoreUrl =
+                        'market://details?id=com.finflowai.money.manager';
                     if (await canLaunchUrl(Uri.parse(playStoreUrl))) {
                       await launchUrl(Uri.parse(playStoreUrl));
                     } else {
                       // Fallback to web URL if Play Store is not available
                       final webUrl =
-                          'https://play.google.com/store/apps/details?id=com.finflow.app';
+                          'https://play.google.com/store/apps/details?id=com.finflowai.money.manager';
                       await launchUrl(Uri.parse(webUrl));
                     }
                   } catch (e) {
@@ -705,14 +774,9 @@ class SettingsScreenState extends State<SettingsScreen> {
                 'icon': Icons.logout,
                 'title': 'Logout',
                 'onTap': () async {
-                  final navigator = Navigator.of(context);
+                  // Sign out from Firebase - AuthWrapper will handle navigation
                   await FirebaseAuth.instance.signOut();
-                  navigator.pushAndRemoveUntil(
-                    MaterialPageRoute(
-                      builder: (context) => const WelcomeScreen(),
-                    ),
-                    (route) => false,
-                  );
+                  // Navigation is handled by AuthWrapper via auth state changes
                 },
                 'iconColor': Colors.red,
               },
@@ -885,7 +949,7 @@ class SettingsScreenState extends State<SettingsScreen> {
         if (!mounted) return;
         Navigator.of(
           context,
-        ).pushNamedAndRemoveUntil('/splash', (route) => false);
+        ).pushNamedAndRemoveUntil('/welcome', (route) => false);
       });
     } catch (e) {
       if (mounted) {
@@ -1129,7 +1193,15 @@ class SettingsScreenState extends State<SettingsScreen> {
                   color: const Color(0xFF4285F4),
                   borderRadius: BorderRadius.circular(18),
                 ),
-                child: const Icon(Icons.g_mobiledata, color: Colors.white),
+                child: SvgPicture.asset(
+                  'assets/google_icon.svg',
+                  width: 20,
+                  height: 20,
+                  colorFilter: const ColorFilter.mode(
+                    Colors.white,
+                    BlendMode.srcIn,
+                  ),
+                ),
               ),
               title: Text(
                 currentUser != null

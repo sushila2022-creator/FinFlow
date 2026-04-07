@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 class Transaction {
   final String id;
+  final String userId; // Added for Firestore security rules
   final String title;
   final String description;
   final double amount;
@@ -20,6 +21,7 @@ class Transaction {
 
   Transaction({
     String? id,
+    required this.userId, // Required for Firestore security
     this.title = '',
     required this.description,
     required this.amount,
@@ -41,6 +43,7 @@ class Transaction {
   // Legacy constructor for backward compatibility with old code
   Transaction.legacy({
     String? id,
+    required this.userId, // Required for Firestore security
     this.title = '',
     required this.description,
     required String categoryName,
@@ -67,6 +70,7 @@ class Transaction {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'userId': userId, // Added for Firestore security rules
       'title': title,
       'description': description,
       'amount': amount,
@@ -114,6 +118,7 @@ class Transaction {
 
     return Transaction(
       id: json['id'] ?? '',
+      userId: json['userId'] ?? '', // Added for Firestore security
       title: json['title'] ?? json['description'] ?? '',
       description: json['description'] ?? '',
       amount: (json['amount'] ?? 0.0).toDouble(),
@@ -135,6 +140,7 @@ class Transaction {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'userId': userId, // Added for consistency
       'title': title,
       'description': description,
       'amount': amount,
@@ -156,6 +162,7 @@ class Transaction {
   factory Transaction.fromMap(Map<String, dynamic> map) {
     return Transaction(
       id: map['id'] ?? '',
+      userId: map['userId'] ?? '', // Added for consistency
       title: map['title'] ?? map['description'] ?? '',
       description: map['description'] ?? '',
       amount: (map['amount'] ?? 0.0).toDouble(),
@@ -180,6 +187,7 @@ class Transaction {
 
   Transaction copyWith({
     String? id,
+    String? userId,
     String? description,
     double? amount,
     String? currencyCode,
@@ -196,6 +204,7 @@ class Transaction {
   }) {
     return Transaction(
       id: id ?? this.id,
+      userId: userId ?? this.userId,
       description: description ?? this.description,
       amount: amount ?? this.amount,
       currencyCode: currencyCode ?? this.currencyCode,

@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.finflow.app"
+    namespace = "com.finflowai.money.manager"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -30,7 +30,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.finflow.app"
+        applicationId = "com.finflowai.money.manager"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26
@@ -42,10 +42,10 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("../../finflow-key.jks")
-            keyAlias = "finflow"
-            storePassword = System.getenv("STORE_PASSWORD") ?: ""  // Set manually or via environment variable
-            keyPassword = System.getenv("KEY_PASSWORD") ?: ""      // Set manually or via environment variable
+            storeFile = file("../../android/finflow_secure.keystore")
+            keyAlias = "finflow_secure_key"
+            storePassword = System.getenv("STORE_PASSWORD") ?: "SecureFinFlow2025!"  // Set manually or via environment variable
+            keyPassword = System.getenv("KEY_PASSWORD") ?: "SecureFinFlow2025!"      // Set manually or via environment variable
         }
     }
 

@@ -3,12 +3,12 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:finflow/providers/transaction_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
 import 'package:finflow/providers/user_provider.dart';
 import 'package:finflow/utils/app_theme.dart';
+import 'package:finflow/utils/debug_logger.dart';
 import 'package:finflow/models/transaction.dart';
 import 'package:finflow/screens/transactions_screen.dart';
 import 'package:finflow/screens/add_transaction_screen.dart';
@@ -84,9 +84,6 @@ class _DashboardScreenState extends State<DashboardScreen>
         await transactionProvider.initializeTransactions();
       }
 
-      // Load SMS scanning state from settings
-      await _loadSmsScanState();
-
       // Initialize SMS permission
       final granted = await _smsService.requestSmsPermission();
       if (!mounted) return;
@@ -103,24 +100,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     _tabController.dispose();
     _pulseController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadSmsScanState() async {
-    final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool('smart_sms_scan_enabled') ?? false;
-    if (!mounted) return;
-    setState(() {
-      _isSmsScanningEnabled = enabled;
-    });
-
-    if (enabled) {
-      _smsService.startScanning();
-      _pulseController.repeat(reverse: true);
-    } else {
-      _smsService.stopScanning();
-      _pulseController.stop();
-      _pulseController.value = 0;
-    }
   }
 
   List<Transaction> _getFilteredTransactions(List<Transaction> transactions) {
@@ -155,6 +134,15 @@ class _DashboardScreenState extends State<DashboardScreen>
     final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final currentUser = userProvider.currentUser;
+    final transactionProvider = Provider.of<TransactionProvider>(context);
+    final balance = transactionProvider.totalBalance;
+    final income = transactionProvider.totalIncome;
+    final expense = transactionProvider.totalExpense;
+
+    // Debug logging
+    logError(
+      'Dashboard build: Balance: $balance, Income: $income, Expense: $expense',
+    );
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -728,89 +716,235 @@ class _DashboardScreenState extends State<DashboardScreen>
               ],
             ),
             const SizedBox(height: 16),
-            SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(
-                children: _detectedTransactions.map((detected) {
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF43F5E).withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFFF43F5E).withValues(alpha: 0.2),
-                      ),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _detectedTransactions.length,
+              itemBuilder: (context, index) {
+                final detected = _detectedTransactions[index];
+
+                // Extract bank name and transaction details from detected data
+                final bankName =
+                    detected['bankName'] ??
+                    detected['merchant'] ??
+                    'Unknown Bank';
+
+                // Fix transaction type detection from SMS service
+                final isDebit = detected['isDebit'] ?? false;
+                final isCredit = detected['isCredit'] ?? !isDebit;
+
+                // Determine transaction type and color
+                final transactionType = isCredit ? 'Received' : 'Sent';
+                final transactionAmount = detected['amount'] ?? 0.0;
+                final isIncome = isCredit;
+
+                // Format the transaction note to show bank name instead of full description
+                final shortNote =
+                    detected['note'] ?? '$bankName - $transactionType';
+
+                // Get the proper transaction type for the AddTransactionScreen
+                final transactionTypeForAdd = isIncome ? 'Income' : 'Expense';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isCredit
+                        ? const Color(0xFF10B981).withValues(alpha: 0.05)
+                        : const Color(0xFFF43F5E).withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isCredit
+                          ? const Color(0xFF10B981).withValues(alpha: 0.2)
+                          : const Color(0xFFF43F5E).withValues(alpha: 0.2),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.warning_amber_rounded,
-                          color: const Color(0xFFF43F5E),
-                          size: 20,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isCredit ? Icons.arrow_downward : Icons.arrow_upward,
+                        color: isCredit
+                            ? const Color(0xFF10B981)
+                            : const Color(0xFFF43F5E),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // First row: Bank name and amount
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    bankName,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: isDarkMode
+                                          ? AppTheme.textPrimaryDark
+                                          : AppTheme.textPrimaryLight,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '$transactionType: ${AppTheme.formatCurrency(transactionAmount.abs(), symbol: symbol)}',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: isCredit
+                                        ? const Color(0xFF10B981)
+                                        : const Color(0xFFF43F5E),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            // Second row: Category and date
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isCredit
+                                        ? const Color(
+                                            0xFF10B981,
+                                          ).withValues(alpha: 0.15)
+                                        : const Color(
+                                            0xFFF43F5E,
+                                          ).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    detected['category'] ??
+                                        (isCredit ? 'Income' : 'Expense'),
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: isCredit
+                                          ? const Color(0xFF10B981)
+                                          : const Color(0xFFF43F5E),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  DateFormat('MMM dd').format(detected['date']),
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    color: isDarkMode
+                                        ? const Color(0xFFB0B0B0)
+                                        : const Color(0xFF64748B),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            // Third row: Short description
+                            Text(
+                              shortNote,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 10,
+                                color: isDarkMode
+                                    ? const Color(0xFFB0B0B0)
+                                    : const Color(0xFF64748B),
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Detected: ${AppTheme.formatCurrency(detected['amount'], symbol: symbol)}',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFFF43F5E),
-                                ),
-                              ),
-                              Text(
-                                '${detected['merchant']} • ${detected['category']} • ${DateFormat('MMM dd').format(detected['date'])}',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
-                                  color: isDarkMode
-                                      ? const Color(0xFFB0B0B0)
-                                      : const Color(0xFF64748B),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => AddTransactionScreen(
-                                  transactionToEdit: {
-                                    'amount': detected['amount'],
-                                    'note': detected['body'] ?? '',
-                                    'date': detected['date'].toIso8601String(),
-                                    'type': 'Expense',
-                                    'category': detected['category'],
-                                  },
-                                ),
-                              ),
-                            ).then((result) {
-                              if (result == true && mounted) {
-                                setState(() {
-                                  _detectedTransactions.remove(detected);
-                                });
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              // Verify user is authenticated before allowing to add transaction
+                              final transactionProvider =
+                                  Provider.of<TransactionProvider>(
+                                    context,
+                                    listen: false,
+                                  );
+
+                              if (!transactionProvider.isAuthenticated) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Please log in to add transactions',
+                                    ),
+                                    backgroundColor: AppTheme.expenseColor,
+                                  ),
+                                );
+                                return;
                               }
-                            });
-                          },
-                          child: Text(
-                            'Add',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppTheme.accentColor,
+
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => AddTransactionScreen(
+                                    transactionToEdit: {
+                                      'amount': transactionAmount.abs(),
+                                      'note': shortNote,
+                                      'date': detected['date']
+                                          .toIso8601String(),
+                                      'type': transactionTypeForAdd,
+                                      'category': detected['category'],
+                                      'merchant': bankName,
+                                      // Include userId from detected transaction for validation
+                                      'userId': detected['userId'],
+                                    },
+                                  ),
+                                ),
+                              ).then((result) {
+                                if (result == true && mounted) {
+                                  setState(() {
+                                    _detectedTransactions.remove(detected);
+                                  });
+                                }
+                              });
+                            },
+                            child: Text(
+                              'Add',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.accentColor,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
+                          TextButton(
+                            onPressed: () {
+                              // Allow user to edit the detected transaction before adding
+                              _showEditDetectedTransactionDialog(
+                                context,
+                                detected,
+                                symbol,
+                                isDarkMode,
+                              );
+                            },
+                            child: Text(
+                              'Edit',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isDarkMode
+                                    ? const Color(0xFFB0B0B0)
+                                    : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -1239,6 +1373,339 @@ class _DashboardScreenState extends State<DashboardScreen>
               color: isDarkMode
                   ? const Color(0xFFB0B0B0)
                   : const Color(0xFF64748B),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Method to show edit dialog for detected transactions
+  Future<void> _showEditDetectedTransactionDialog(
+    BuildContext context,
+    Map<String, dynamic> detected,
+    String symbol,
+    bool isDarkMode,
+  ) async {
+    final bankName =
+        detected['bankName'] ?? detected['merchant'] ?? 'Unknown Bank';
+    final isCredit = detected['isCredit'] ?? true;
+    final transactionAmount = detected['amount'] ?? 0.0;
+    final currentNote = detected['note'] ?? '';
+    final currentCategory =
+        detected['category'] ?? (isCredit ? 'Income' : 'Expense');
+
+    String editedBankName = bankName;
+    double editedAmount = transactionAmount.abs();
+    String editedNote = currentNote;
+    String selectedCategory = currentCategory;
+    bool isEditedCredit = isCredit;
+
+    // Get available categories from provider
+    final transactionProvider = Provider.of<TransactionProvider>(
+      context,
+      listen: false,
+    );
+
+    // Get categories from the transaction provider's category map
+    final availableCategories = transactionProvider.transactions
+        .map((t) => t.category)
+        .toSet()
+        .toList();
+
+    // Add default categories if not present
+    final allCategories = <String>{
+      ...availableCategories,
+      if (isCredit) 'Income',
+      'Salary',
+      'Freelance',
+      'Investments',
+      if (!isCredit) 'Expense',
+      'Food',
+      'Travel',
+      'Bills',
+      'Shopping',
+    }.toList();
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Edit Transaction',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: isDarkMode
+                ? AppTheme.textPrimaryDark
+                : AppTheme.textPrimaryLight,
+          ),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Bank Name
+              TextField(
+                controller: TextEditingController(text: bankName),
+                onChanged: (value) => editedBankName = value,
+                decoration: InputDecoration(
+                  labelText: 'Bank Name',
+                  labelStyle: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: isDarkMode
+                        ? const Color(0xFFB0B0B0)
+                        : const Color(0xFF64748B),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Transaction Type
+              Row(
+                children: [
+                  Text(
+                    'Transaction Type:',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDarkMode
+                          ? const Color(0xFFB0B0B0)
+                          : const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Row(
+                    children: [
+                      InkWell(
+                        onTap: () {
+                          setState(() => isEditedCredit = true);
+                          Navigator.of(context).pop();
+                          _showEditDetectedTransactionDialog(
+                            context,
+                            detected,
+                            symbol,
+                            isDarkMode,
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isEditedCredit
+                                ? const Color(0xFF10B981).withValues(alpha: 0.2)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: isEditedCredit
+                                  ? const Color(0xFF10B981)
+                                  : (isDarkMode
+                                        ? const Color(0xFF2D2D2D)
+                                        : const Color(0xFFF1F5F9)),
+                            ),
+                          ),
+                          child: Text(
+                            'Credit',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isEditedCredit
+                                  ? const Color(0xFF10B981)
+                                  : (isDarkMode
+                                        ? const Color(0xFFB0B0B0)
+                                        : const Color(0xFF64748B)),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () {
+                          setState(() => isEditedCredit = false);
+                          Navigator.of(context).pop();
+                          _showEditDetectedTransactionDialog(
+                            context,
+                            detected,
+                            symbol,
+                            isDarkMode,
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: !isEditedCredit
+                                ? const Color(0xFFF43F5E).withValues(alpha: 0.2)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: !isEditedCredit
+                                  ? const Color(0xFFF43F5E)
+                                  : (isDarkMode
+                                        ? const Color(0xFF2D2D2D)
+                                        : const Color(0xFFF1F5F9)),
+                            ),
+                          ),
+                          child: Text(
+                            'Debit',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: !isEditedCredit
+                                  ? const Color(0xFFF43F5E)
+                                  : (isDarkMode
+                                        ? const Color(0xFFB0B0B0)
+                                        : const Color(0xFF64748B)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Amount
+              TextField(
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                controller: TextEditingController(
+                  text: transactionAmount.abs().toString(),
+                ),
+                onChanged: (value) {
+                  try {
+                    editedAmount = double.parse(value);
+                  } catch (e) {
+                    editedAmount = transactionAmount.abs();
+                  }
+                },
+                decoration: InputDecoration(
+                  labelText: 'Amount',
+                  labelStyle: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: isDarkMode
+                        ? const Color(0xFFB0B0B0)
+                        : const Color(0xFF64748B),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Category
+              DropdownButtonFormField<String>(
+                initialValue: selectedCategory,
+                items: allCategories.map((category) {
+                  return DropdownMenuItem(
+                    value: category,
+                    child: Text(
+                      category,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: isDarkMode
+                            ? AppTheme.textPrimaryDark
+                            : AppTheme.textPrimaryLight,
+                      ),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    selectedCategory = value;
+                  }
+                },
+                decoration: InputDecoration(
+                  labelText: 'Category',
+                  labelStyle: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: isDarkMode
+                        ? const Color(0xFFB0B0B0)
+                        : const Color(0xFF64748B),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Note
+              TextField(
+                controller: TextEditingController(text: currentNote),
+                onChanged: (value) => editedNote = value,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  labelText: 'Description',
+                  labelStyle: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: isDarkMode
+                        ? const Color(0xFFB0B0B0)
+                        : const Color(0xFF64748B),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isDarkMode
+                    ? const Color(0xFFB0B0B0)
+                    : const Color(0xFF64748B),
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              // Update the detected transaction with edited values
+              detected.updateAll((key, value) {
+                switch (key) {
+                  case 'merchant':
+                  case 'bankName':
+                    return editedBankName;
+                  case 'amount':
+                    return isEditedCredit ? editedAmount : -editedAmount;
+                  case 'note':
+                    return editedNote;
+                  case 'category':
+                    return selectedCategory;
+                  case 'isCredit':
+                    return isEditedCredit;
+                  default:
+                    return value;
+                }
+              });
+
+              Navigator.of(context).pop();
+            },
+            child: Text(
+              'Save',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.accentColor,
+              ),
             ),
           ),
         ],

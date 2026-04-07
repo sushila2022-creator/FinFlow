@@ -3,14 +3,20 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:finflow/screens/welcome_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:finflow/providers/user_provider.dart';
+import 'package:finflow/utils/debug_logger.dart';
 
+/// SignupScreen - User registration screen
+///
+/// Key changes:
+/// - Removed SharedPreferences-based login flags
+/// - FirebaseAuth.instance.currentUser is the single source of truth
+/// - Navigation is handled by AuthWrapper via auth state changes
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
 
@@ -74,9 +80,6 @@ class _SignupScreenState extends State<SignupScreen> {
 
     setState(() => _isLoading = true);
 
-    // Capture provider before async operations
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-
     try {
       final userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(email: email, password: password);
@@ -91,12 +94,13 @@ class _SignupScreenState extends State<SignupScreen> {
             'createdAt': FieldValue.serverTimestamp(),
           });
 
-      // Save login status for persistence
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('has_logged_in', true);
+      logDebug('Account created successfully: $email');
 
       // Refresh user state in provider
-      await userProvider.refreshUser();
+      if (mounted) {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        await userProvider.refreshUser();
+      }
 
       if (!mounted) return;
 
@@ -113,12 +117,8 @@ class _SignupScreenState extends State<SignupScreen> {
         );
       }
 
-      // Navigate to main wrapper with a small delay to show success message
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          Navigator.pushReplacementNamed(context, '/home');
-        }
-      });
+      // Navigation is handled by AuthWrapper via auth state changes
+      // No manual navigation needed
     } catch (e) {
       if (!mounted) return;
 
@@ -147,6 +147,8 @@ class _SignupScreenState extends State<SignupScreen> {
         }
       }
 
+      logError('Signup failed', error: e);
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -166,9 +168,6 @@ class _SignupScreenState extends State<SignupScreen> {
 
   Future<void> _signupWithGoogle() async {
     setState(() => _isLoading = true);
-
-    // Capture provider before async operations
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
 
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
@@ -202,12 +201,7 @@ class _SignupScreenState extends State<SignupScreen> {
             'createdAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
 
-      // Save login status for persistence
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('has_logged_in', true);
-
-      // Refresh user state in provider
-      await userProvider.refreshUser();
+      logDebug('Google signup successful: ${userCredential.user?.email}');
 
       if (!mounted) return;
 
@@ -223,8 +217,10 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
         );
       }
-      Navigator.pushReplacementNamed(context, '/home');
+
+      // Navigation is handled by AuthWrapper via auth state changes
     } catch (e) {
+      logError('Google signup failed', error: e);
       if (!mounted) return;
 
       if (mounted) {
@@ -246,9 +242,6 @@ class _SignupScreenState extends State<SignupScreen> {
 
   Future<void> _signupWithApple() async {
     setState(() => _isLoading = true);
-
-    // Capture provider before async operations
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
 
     try {
       final appleCredential = await SignInWithApple.getAppleIDCredential(
@@ -281,12 +274,7 @@ class _SignupScreenState extends State<SignupScreen> {
             'createdAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
 
-      // Save login status for persistence
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('has_logged_in', true);
-
-      // Refresh user state in provider
-      await userProvider.refreshUser();
+      logDebug('Apple signup successful: ${userCredential.user?.email}');
 
       if (!mounted) return;
 
@@ -302,8 +290,10 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
         );
       }
-      Navigator.pushReplacementNamed(context, '/home');
+
+      // Navigation is handled by AuthWrapper via auth state changes
     } catch (e) {
+      logError('Apple signup failed', error: e);
       if (!mounted) return;
 
       if (mounted) {

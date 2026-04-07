@@ -1,17 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:finflow/utils/debug_logger.dart';
 
+/// Optimized CurrencyProvider with deferred async initialization
+///
+/// Performance optimizations:
+/// 1. Starts with default currency immediately (no waiting)
+/// 2. Loads saved currency asynchronously after first frame
+/// 3. Uses Future.microtask for non-blocking initialization
 class CurrencyProvider with ChangeNotifier {
   static const String _currencySymbolKey = 'currency_symbol';
   static const String _defaultCurrencySymbol = '\$'; // US Dollar
   static const String _defaultCurrencyName = 'US Dollar';
 
+  // Start with default currency immediately - no waiting
   String _currentCurrencySymbol = _defaultCurrencySymbol;
   String _currentCurrencyName = _defaultCurrencyName;
+  bool _isInitialized = false;
 
   // Getters for current currency
   String get currentCurrencySymbol => _currentCurrencySymbol;
   String get currentCurrencyName => _currentCurrencyName;
+  bool get isInitialized => _isInitialized;
 
   // Getter for selected currency (as an object with symbol property)
   Map<String, String> get selectedCurrency => {
@@ -22,35 +32,49 @@ class CurrencyProvider with ChangeNotifier {
   // Get currency code from symbol
   String get currentCurrencyCode => _getCurrencyCode(_currentCurrencySymbol);
 
-  // Constructor - automatically loads saved currency
+  /// Initialize currency provider
+  /// Loads saved currency asynchronously without blocking UI
   CurrencyProvider() {
-    _loadCurrency();
+    // Use Future.microtask to defer loading until after current event loop
+    // This ensures the UI renders with default currency immediately
+    Future.microtask(() => _loadCurrency());
   }
 
-  // Load saved currency from SharedPreferences
+  // Load saved currency from SharedPreferences (async, non-blocking)
   Future<void> _loadCurrency() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedSymbol = prefs.getString(_currencySymbolKey);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedSymbol = prefs.getString(_currencySymbolKey);
 
-    if (savedSymbol != null && savedSymbol.isNotEmpty) {
-      _currentCurrencySymbol = savedSymbol;
-      _currentCurrencyName = _getCurrencyName(savedSymbol);
-    } else {
-      // Set default currency if none is saved
-      await setCurrency(_defaultCurrencySymbol);
+      if (savedSymbol != null && savedSymbol.isNotEmpty) {
+        _currentCurrencySymbol = savedSymbol;
+        _currentCurrencyName = _getCurrencyName(savedSymbol);
+      }
+      // If no saved currency, keep default
+    } catch (e) {
+      // Failed to load saved currency - keep default
+      logError(
+        'Failed to load saved currency',
+        tag: 'CurrencyProvider',
+        error: e,
+      );
+    } finally {
+      _isInitialized = true;
+      notifyListeners();
     }
-
-    notifyListeners();
   }
 
   // Set currency and save to SharedPreferences immediately
   Future<void> setCurrency(String symbol) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_currencySymbolKey, symbol);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_currencySymbolKey, symbol);
 
-    _currentCurrencySymbol = symbol;
-    _currentCurrencyName = _getCurrencyName(symbol);
-
+      _currentCurrencySymbol = symbol;
+      _currentCurrencyName = _getCurrencyName(symbol);
+    } catch (e) {
+      logError('Failed to save currency', tag: 'CurrencyProvider', error: e);
+    }
     notifyListeners();
   }
 
