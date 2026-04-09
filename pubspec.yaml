@@ -1,8 +1,8 @@
 name: finflow
-description: "A new Flutter project."
+description: "FinFlow-AI Money Manager - Smart personal finance management with AI insights"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.2+3
 
 environment:
   sdk: ^3.9.0
@@ -51,9 +51,22 @@ dev_dependencies:
     sdk: flutter
   sqflite_common_ffi: ^2.3.3
   flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.0
   flutter_lints: ^6.0.0
   mockito: ^5.4.4
   build_runner: ^2.4.11
+
+
+# Native Splash Screen Configuration
+flutter_native_splash:
+  color: "#05192D"
+  image: assets/icon/icon.png
+  android: true
+  ios: true
+  web: false
+  android_gravity: center
+  ios_content_mode: center
+  fullscreen: true
 
 flutter_icons:
   android: true

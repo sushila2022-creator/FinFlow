@@ -1,4 +1,4 @@
-# FinFlow Terms of Service
+# FinFlow-AI Money Manager Terms of Service
 
 **Last Updated:** [Date]
 
@@ -6,11 +6,11 @@
 
 ## 1. Agreement to Terms
 
-By downloading, installing, or using the FinFlow mobile application (the "App"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, please do not use the App.
+By downloading, installing, or using the FinFlow-AI Money Manager mobile application (the "App"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, please do not use the App.
 
 ## 2. Description of Service
 
-FinFlow is a personal finance management application that helps you:
+FinFlow-AI Money Manager is a personal finance management application that helps you:
 - Track income and expenses
 - Categorize transactions
 - Set budgets and savings goals
@@ -44,13 +44,13 @@ You agree to:
 ## 5. Financial Data Disclaimer
 
 ### 5.1 Accuracy
-- FinFlow is a personal finance tracking tool, not a financial advisor
+- FinFlow-AI Money Manager is a personal finance tracking tool, not a financial advisor
 - We do not guarantee the accuracy of financial calculations or analysis
 - You are responsible for verifying all financial data entered into the App
 - The App should not be used as the sole basis for financial decisions
 
 ### 5.2 Not a Bank
-- FinFlow is not a bank, credit union, or financial institution
+- FinFlow-AI Money Manager is not a bank, credit union, or financial institution
 - We do not hold, transfer, or manage your money
 - We do not provide banking, investment, or tax advice
 
@@ -58,7 +58,7 @@ You agree to:
 
 ### 6.1 Premium Feature
 The "Smart SMS Scan" feature is a **PREMIUM-ONLY** feature:
-- Available exclusively to users with an active FinFlow Premium subscription
+- Available exclusively to users with an active FinFlow-AI Money Manager Premium subscription
 - Automatically disabled if subscription expires or is cancelled
 - Requires separate opt-in even for premium users
 
@@ -102,7 +102,7 @@ By enabling the "Smart SMS Scan" feature, you grant the App permission to:
 ## 8. Intellectual Property
 
 ### 8.1 Ownership
-- FinFlow and its original content, features, and functionality are owned by us and are protected by international copyright, trademark, and other intellectual property laws
+- FinFlow-AI Money Manager and its original content, features, and functionality are owned by us and are protected by international copyright, trademark, and other intellectual property laws
 - You retain ownership of data you create within the App
 
 ### 8.2 License
@@ -147,7 +147,7 @@ WE DO NOT WARRANT THAT:
 TO THE MAXIMUM EXTENT PERMITTED BY LAW, WE SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS, REVENUES, DATA, OR DATA USE, ARISING OUT OF OR RELATED TO YOUR USE OF THE APP.
 
 ### 11.4 Indemnification
-You agree to indemnify and hold harmless FinFlow and its developers from any claims, damages, or expenses arising from your use of the App or violation of these Terms.
+You agree to indemnify and hold harmless FinFlow-AI Money Manager and its developers from any claims, damages, or expenses arising from your use of the App or violation of these Terms.
 
 ## 12. Modifications to the App
 
@@ -190,7 +190,7 @@ If any provision of these Terms is found to be unenforceable, the remaining prov
 
 ## 18. Entire Agreement
 
-These Terms, together with our Privacy Policy, constitute the entire agreement between you and FinFlow regarding your use of the App.
+These Terms, together with our Privacy Policy, constitute the entire agreement between you and FinFlow-AI Money Manager regarding your use of the App.
 
 ## 19. Contact Information
 

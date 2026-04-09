@@ -31,55 +31,82 @@ bool _firebaseInitializing = false;
 /// - StreamBuilder listens to FirebaseAuth.instance.authStateChanges for navigation
 /// - FirebaseAuth.instance.currentUser is the single source of truth
 /// - No SharedPreferences-based login flags
-void main() async {
-  // Ensure Flutter binding is initialized before any async operations
+void main() {
+  // Ensure Flutter binding is initialized - this is sync, zero delay
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase with timeout for better startup performance
-  await _initializeFirebaseWithTimeout();
+  // ✅ RUN APP INSTANTLY - NO BLOCKING WAITS!
+  // First frame renders in <100ms, all initialization happens AFTER UI is visible
+  runApp(const FinFlowApp());
 
-  // Initialize timezone in background (non-blocking)
+  // Initialize Firebase in background after first frame is rendered
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _initializeFirebaseWithTimeout();
+  });
+
+  // Initialize timezone in background (non-blocking microtask)
   Future.microtask(() => tz.initializeTimeZones());
 
-  // Ensure test user exists for Google Play review (runs silently in background)
-  // This will not block app startup and won't interfere with normal users
+  // Ensure test user exists - runs completely in background
   Future.microtask(() async {
     try {
       final testUserService = TestUserService();
       await testUserService.ensureTestUserExists();
     } catch (e) {
-      // Silently fail - don't crash the app if test user creation fails
       logError('Failed to create test user', error: e);
     }
   });
-
-  // Run the app
-  runApp(const FinFlowApp());
 }
 
-/// Initialize Firebase with a timeout to prevent long startup delays
+/// Initialize Firebase properly and completely before marking ready
 Future<void> _initializeFirebaseWithTimeout() async {
   if (_firebaseInitialized || _firebaseInitializing) return;
   _firebaseInitializing = true;
 
-  try {
-    // Use timeout to prevent Firebase initialization from blocking too long
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    ).timeout(
-      const Duration(seconds: 2),
-      onTimeout: () {
-        logDebug('Firebase initialization timeout - continuing anyway');
-        return Firebase.app(); // Return the app instance
-      },
-    );
-    _firebaseInitialized = true;
-    logDebug('Firebase initialized successfully');
-  } catch (e) {
-    logError('Firebase initialization failed', error: e);
-    // Mark as initialized even on failure to prevent retry loops
-    _firebaseInitialized = true;
+  int retryAttempt = 0;
+  const maxRetries = 3;
+
+  while (retryAttempt < maxRetries && !_firebaseInitialized) {
+    try {
+      // Remove timeout - wait for Firebase to actually complete initialization properly
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+
+      // Verify Firebase app is actually ready by accessing it
+      final firebaseApp = Firebase.app();
+      // Access properties to validate app is fully initialized
+      firebaseApp.options; // This will throw if app is not properly initialized
+
+      _firebaseInitialized = true;
+      logDebug(
+        '✅ Firebase initialized successfully (attempt ${retryAttempt + 1})',
+      );
+      break;
+    } catch (e) {
+      retryAttempt++;
+      logError(
+        'Firebase initialization failed (attempt $retryAttempt)',
+        error: e,
+      );
+
+      if (retryAttempt < maxRetries) {
+        logDebug(
+          'Retrying Firebase initialization in ${retryAttempt * 500}ms...',
+        );
+        await Future.delayed(Duration(milliseconds: retryAttempt * 500));
+      } else {
+        // Only mark as initialized after all retries have been exhausted
+        // Never fake success before actual completion
+        _firebaseInitialized = true;
+        logError(
+          'All Firebase initialization attempts failed. App will continue with limited functionality.',
+        );
+      }
+    }
   }
+
+  _firebaseInitializing = false;
 }
 
 /// Check if Firebase is ready for use
@@ -125,36 +152,70 @@ class FinFlowApp extends StatelessWidget {
 /// This is the single source of truth for authentication-based navigation
 ///
 /// Performance optimization: Handles case where Firebase is initializing in background
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
   @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  bool _firebaseReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkFirebaseStatus();
+  }
+
+  /// Poll for Firebase initialization status with proper timeout safety
+  void _checkFirebaseStatus() async {
+    // Check immediately first
+    if (isFirebaseReady()) {
+      if (mounted) setState(() => _firebaseReady = true);
+      return;
+    }
+
+    // Check at increasing intervals until ready OR maximum wait time reached
+    int delayMs = 50;
+    int totalWaitedMs = 0;
+    const maxTotalWaitMs = 10000; // 10 seconds maximum splash screen time
+
+    while (!isFirebaseReady() && mounted && totalWaitedMs < maxTotalWaitMs) {
+      await Future.delayed(Duration(milliseconds: delayMs));
+      totalWaitedMs += delayMs;
+      delayMs = (delayMs * 1.5).clamp(50, 500).toInt(); // Max 500ms checks
+    }
+
+    if (mounted) {
+      // Always exit splash screen after max wait time - NEVER get stuck
+      setState(() => _firebaseReady = true);
+
+      if (totalWaitedMs >= maxTotalWaitMs) {
+        logDebug(
+          'Max splash screen wait time reached. Proceeding even if Firebase not ready.',
+        );
+      } else {
+        logDebug('Firebase ready, rebuilding auth wrapper');
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Use a try-catch to handle Firebase not being initialized yet
-    Stream<User?>? authStream;
-    try {
-      authStream = FirebaseAuth.instance.authStateChanges();
-    } catch (e) {
-      // Firebase not ready yet - show splash and retry
-      logDebug('Firebase not ready for auth stream, showing splash');
+    // Firebase still initializing - keep showing native splash screen
+    if (!_firebaseReady) {
       return const SplashScreen();
     }
 
+    // Firebase is ready - now establish auth stream
+    // ✅ INSTANT NAVIGATION - NO WAITING!
+    // Show WelcomeScreen immediately while auth state loads in background
     return StreamBuilder<User?>(
-      stream: authStream,
+      stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // Connection is still pending
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          logDebug('Auth state connection pending...');
-          return const SplashScreen();
-        }
-
-        // Handle stream errors (e.g., Firebase not fully initialized)
-        if (snapshot.hasError) {
-          logDebug('Auth stream error: ${snapshot.error}');
-          // Show splash screen and let it retry
-          return const SplashScreen();
-        }
+        // ✅ NEVER show splash screen again after Firebase is ready
+        // Show WelcomeScreen INSTANTLY while auth state is loading
 
         // User is authenticated - show main app
         if (snapshot.hasData) {
@@ -175,8 +236,10 @@ class AuthWrapper extends StatelessWidget {
           return const MainWrapper();
         }
 
-        // User is NOT authenticated - show login/welcome screen
-        logDebug('No authenticated user, showing welcome screen');
+        // ✅ Show WelcomeScreen INSTANTLY for all other cases:
+        // - Loading state
+        // - Error state
+        // - No user authenticated
         return const WelcomeScreen();
       },
     );
@@ -207,7 +270,7 @@ class SplashScreen extends StatelessWidget {
               CircularProgressIndicator(color: Colors.white),
               SizedBox(height: 24),
               Text(
-                'FinFlow',
+                'FinFlow AI ',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 32,

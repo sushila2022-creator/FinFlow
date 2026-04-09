@@ -1,4 +1,4 @@
-# FinFlow Privacy Policy
+# FinFlow-AI Money Manager Privacy Policy
 
 **Last Updated:** [Date]
 
@@ -6,7 +6,7 @@
 
 ## 1. Introduction
 
-Welcome to FinFlow ("we," "our," or "us"). We are committed to protecting your personal information and your right to privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application FinFlow (the "App").
+Welcome to FinFlow-AI Money Manager ("we," "our," or "us"). We are committed to protecting your personal information and your right to privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application FinFlow-AI Money Manager (the "App").
 
 By using the App, you agree to the collection and use of information in accordance with this policy.
 
@@ -26,7 +26,7 @@ By using the App, you agree to the collection and use of information in accordan
 **IMPORTANT:** The "Smart SMS Scan" feature is a **PREMIUM-ONLY** feature available through subscription:
 
 **Access:**
-- Available exclusively to FinFlow Premium subscribers
+- Available exclusively to FinFlow-AI Money Manager Premium subscribers
 - Requires explicit user opt-in (disabled by default)
 - Can be disabled anytime in Settings, even with active subscription
 
@@ -170,4 +170,4 @@ By using our App, you hereby consent to our Privacy Policy and agree to its term
 
 ---
 
-**Note:** This privacy policy is specifically tailored for FinFlow app and covers all data collection practices including the sensitive SMS permission. Make sure to update the [Date] with the actual date when you publish this policy.
+**Note:** This privacy policy is specifically tailored for FinFlow-AI Money Manager app and covers all data collection practices including the sensitive SMS permission. Make sure to update the [Date] with the actual date when you publish this policy.

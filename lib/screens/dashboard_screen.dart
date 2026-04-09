@@ -149,7 +149,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       appBar: AppBar(
         backgroundColor: const Color(0xFF0D2B45),
         title: Text(
-          'FinFlow',
+          'FinFlow - AI',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 20,
             fontWeight: FontWeight.w800,

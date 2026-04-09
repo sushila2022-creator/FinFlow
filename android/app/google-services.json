@@ -12,7 +12,28 @@
           "package_name": "com.finflowai.money.manager"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1066730590986-j2aeia9vghknd3ht68ohoa8tpnmlb22s.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.finflowai.money.manager",
+            "certificate_hash": "336201787a0568f7c601f6b2c0fbbe4a0f183feb"
+          }
+        },
+        {
+          "client_id": "1066730590986-qp81buemuk9e9fm9vu226eumt788jsjo.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.daily_finance_tracker",
+            "certificate_hash": "81c260081a2063027e13cef0a23f5e2273b7aec1"
+          }
+        },
+        {
+          "client_id": "1066730590986-s6scksiuu1pgjkcdgrfetpq6bvhfe0db.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDd_W6i9nyvUuO-XU6RSdXJl_2qw8t2_Uo"
@@ -20,7 +41,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1066730590986-s6scksiuu1pgjkcdgrfetpq6bvhfe0db.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

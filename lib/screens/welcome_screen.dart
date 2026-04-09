@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:finflow/utils/debug_logger.dart';
 import 'package:finflow/screens/signup_screen.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:finflow/services/auth_service.dart';
 
 /// WelcomeScreen - Login and authentication screen
 ///
@@ -52,54 +49,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   Future<void> _signInWithGoogle() async {
     setState(() => _isLoading = true);
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn();
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-
-      if (googleUser == null) {
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      final AuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      final UserCredential userCredential = await FirebaseAuth.instance
-          .signInWithCredential(credential);
-
-      // Save/update user data in Firestore
-      await _saveUserToFirestore(
-        uid: userCredential.user!.uid,
-        email: googleUser.email,
-        name: googleUser.displayName ?? 'Google User',
-        photoUrl: googleUser.photoUrl,
-        provider: 'google',
-      );
-
-      logDebug('Google sign-in successful: ${userCredential.user?.email}');
+      await AuthService().signInWithGoogle();
       // Navigation is handled by AuthWrapper via auth state changes
     } catch (e) {
-      String errorMessage = 'Google Sign In failed';
-
-      if (e is FirebaseAuthException) {
-        switch (e.code) {
-          case 'network-request-failed':
-            errorMessage =
-                'Network error. Please check your internet connection';
-            break;
-          case 'operation-not-allowed':
-            errorMessage = 'Google sign-in is not enabled';
-            break;
-          default:
-            errorMessage = e.message ?? 'Google Sign In failed';
-        }
-      } else {
-        errorMessage = 'Google Sign In failed. Please try again.';
-      }
-
+      final errorMessage = AuthService().getFriendlyErrorMessage(e);
       logError('Google sign-in failed', error: e);
       _showSnackBar(errorMessage, AppTheme.expenseColor);
     } finally {
@@ -111,82 +64,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   Future<void> _signInWithApple() async {
     setState(() => _isLoading = true);
     try {
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-      );
-
-      final oauthCredential = OAuthProvider("apple.com").credential(
-        idToken: appleCredential.identityToken,
-        accessToken: appleCredential.authorizationCode,
-      );
-
-      final UserCredential userCredential = await FirebaseAuth.instance
-          .signInWithCredential(oauthCredential);
-
-      // Save/update user data in Firestore
-      await _saveUserToFirestore(
-        uid: userCredential.user!.uid,
-        email: appleCredential.email ?? '',
-        name:
-            appleCredential.givenName != null &&
-                appleCredential.familyName != null
-            ? '${appleCredential.givenName} ${appleCredential.familyName}'
-            : 'Apple User',
-        provider: 'apple',
-      );
-
-      logDebug('Apple sign-in successful: ${userCredential.user?.email}');
+      await AuthService().signInWithApple();
       // Navigation is handled by AuthWrapper via auth state changes
     } catch (e) {
-      String errorMessage = 'Apple Sign In failed';
-
-      if (e is FirebaseAuthException) {
-        switch (e.code) {
-          case 'network-request-failed':
-            errorMessage =
-                'Network error. Please check your internet connection';
-            break;
-          case 'operation-not-allowed':
-            errorMessage = 'Apple sign-in is not enabled';
-            break;
-          default:
-            errorMessage = e.message ?? 'Apple Sign In failed';
-        }
-      } else {
-        errorMessage = 'Apple Sign In failed. Please try again.';
-      }
-
+      final errorMessage = AuthService().getFriendlyErrorMessage(e);
       logError('Apple sign-in failed', error: e);
       _showSnackBar(errorMessage, AppTheme.expenseColor);
     } finally {
       if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  /// Save user data to Firestore
-  Future<void> _saveUserToFirestore({
-    required String uid,
-    required String email,
-    required String name,
-    String? photoUrl,
-    String? provider,
-  }) async {
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'name': name,
-        'email': email,
-        'photoUrl': photoUrl,
-        'provider': provider,
-        'updatedAt': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-      logDebug('User data saved to Firestore: $uid');
-    } catch (e) {
-      logError('Failed to save user data to Firestore', error: e);
-      // Don't fail the login if Firestore write fails
     }
   }
 
@@ -311,7 +196,7 @@ class _LogoWidget extends StatelessWidget {
         ),
       ),
       child: Text(
-        'FinFlow',
+        'FinFlow-AI',
         style: GoogleFonts.plusJakartaSans(
           fontSize: 28,
           fontWeight: FontWeight.w800,
@@ -784,51 +669,17 @@ Future<void> _login(
     final password = passwordController.text.trim();
 
     // Use Firebase Authentication for proper login
-    await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+    await AuthService().signInWithEmailAndPassword(email, password);
 
     logDebug('Login successful: $email');
     // Navigation is handled by AuthWrapper via auth state changes
-  } on FirebaseAuthException catch (e) {
-    String errorMessage;
-    switch (e.code) {
-      case 'user-not-found':
-        errorMessage = 'No account found with this email';
-        break;
-      case 'wrong-password':
-        errorMessage = 'Incorrect password';
-        break;
-      case 'invalid-email':
-        errorMessage = 'Invalid email address';
-        break;
-      case 'user-disabled':
-        errorMessage = 'This account has been disabled';
-        break;
-      case 'too-many-requests':
-        errorMessage = 'Too many login attempts. Please try again later.';
-        break;
-      case 'network-request-failed':
-        errorMessage = 'Network error. Please check your internet connection';
-        break;
-      default:
-        errorMessage = e.message ?? 'Login failed';
-    }
+  } catch (e) {
+    logError('Login failed', error: e);
+    final errorMessage = AuthService().getFriendlyErrorMessage(e);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(errorMessage),
-          backgroundColor: AppTheme.expenseColor,
-        ),
-      );
-    }
-  } catch (e) {
-    logError('Login failed', error: e);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('An error occurred: ${e.toString()}'),
           backgroundColor: AppTheme.expenseColor,
         ),
       );
@@ -857,7 +708,7 @@ Future<void> _forgotPassword(
 
   onLoadingChanged?.call(true);
   try {
-    await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+    await AuthService().sendPasswordResetEmail(email);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
