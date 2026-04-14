@@ -85,33 +85,41 @@ class _LoginScreenState extends State<LoginScreen> {
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
 
-      String errorMessage = 'An error occurred during login';
+      // Build detailed error message with error code for debugging
+      String friendlyMessage;
 
       switch (e.code) {
+        case 'invalid-credential':
+          friendlyMessage = 'Invalid email or password';
+          break;
         case 'user-not-found':
-          errorMessage = 'No user found with this email address';
+          friendlyMessage = 'No user found with this email address';
           break;
         case 'wrong-password':
-          errorMessage = 'Incorrect password. Please try again';
+          friendlyMessage = 'Incorrect password. Please try again';
           break;
         case 'invalid-email':
-          errorMessage = 'The email address is not valid';
+          friendlyMessage = 'The email address is not valid';
           break;
         case 'user-disabled':
-          errorMessage = 'This account has been disabled';
+          friendlyMessage = 'This account has been disabled';
           break;
         case 'too-many-requests':
-          errorMessage = 'Too many login attempts. Please try again later';
+          friendlyMessage = 'Too many login attempts. Please try again later';
           break;
         case 'network-request-failed':
-          errorMessage = 'Network error. Please check your internet connection';
+          friendlyMessage =
+              'Network error. Please check your internet connection';
           break;
         case 'operation-not-allowed':
-          errorMessage = 'Email/password sign-in is not enabled';
+          friendlyMessage = 'Email/password sign-in is not enabled';
           break;
         default:
-          errorMessage = e.message ?? 'An error occurred during login';
+          friendlyMessage = 'An error occurred during login';
       }
+
+      // Show only user-friendly message without raw error codes
+      String errorMessage = friendlyMessage;
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -170,6 +178,18 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 children: [
                   SizedBox(height: screenHeight * 0.03),
+
+                  // Back Button
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    ),
+                  ),
+
                   // Compact Logo Branding
                   Text(
                     'FinFlow',

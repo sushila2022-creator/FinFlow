@@ -333,6 +333,18 @@ class _SignupScreenState extends State<SignupScreen> {
               child: Column(
                 children: [
                   const SizedBox(height: 12),
+
+                  // Back Button
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    ),
+                  ),
+
                   // Compact Logo Branding
                   Text(
                     'FinFlow',
@@ -619,7 +631,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         child: _SocialButton(
                           icon: 'assets/google_icon.svg',
                           label: 'Google',
-                          onPressed: _signupWithGoogle,
+                          onPressed: _isLoading ? () {} : _signupWithGoogle,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -628,7 +640,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           icon: null,
                           label: 'Apple',
                           isApple: true,
-                          onPressed: _signupWithApple,
+                          onPressed: _isLoading ? () {} : _signupWithApple,
                         ),
                       ),
                     ],

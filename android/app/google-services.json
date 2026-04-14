@@ -7,26 +7,34 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1066730590986:android:0433644050b5cb484be0f3",
+        "mobilesdk_app_id": "1:1066730590986:android:c48db4639a586b7e4be0f3",
         "android_client_info": {
           "package_name": "com.finflowai.money.manager"
         }
       },
       "oauth_client": [
         {
-          "client_id": "1066730590986-j2aeia9vghknd3ht68ohoa8tpnmlb22s.apps.googleusercontent.com",
+          "client_id": "1066730590986-2o95civl3f0tfvb669thjd8al32trvhg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.finflowai.money.manager",
+            "certificate_hash": "a06c29c694f01349656eeff9415b8f58d24a259c"
+          }
+        },
+        {
+          "client_id": "1066730590986-4tltfnrdlcfhuvjm0fjft1cirr7kb2n3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.finflowai.money.manager",
+            "certificate_hash": "5989c716bfb5f5b6123471aa611d151c6d42c635"
+          }
+        },
+        {
+          "client_id": "1066730590986-uqvbbdptj60cppi2u9m4j1kqcmtad3rj.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.finflowai.money.manager",
             "certificate_hash": "336201787a0568f7c601f6b2c0fbbe4a0f183feb"
-          }
-        },
-        {
-          "client_id": "1066730590986-qp81buemuk9e9fm9vu226eumt788jsjo.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.example.daily_finance_tracker",
-            "certificate_hash": "81c260081a2063027e13cef0a23f5e2273b7aec1"
           }
         },
         {

@@ -25,7 +25,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:finflow/screens/premium_screen.dart';
-import 'package:syncfusion_flutter_xlsio/xlsio.dart' hide Column;
+import 'package:syncfusion_flutter_xlsio/xlsio.dart' hide Column, Row;
 import 'package:open_file/open_file.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -395,6 +395,107 @@ class SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const SizedBox(height: 16),
+            // Profile Section
+            _buildSectionHeader('Profile', isDarkMode),
+            Consumer<UserProvider>(
+              builder: (context, userProvider, child) {
+                final user = userProvider.currentUser;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 2,
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 30,
+                            backgroundColor: AppTheme.primaryColor,
+                            child: Text(
+                              user != null && user.name.isNotEmpty
+                                  ? user.name[0].toUpperCase()
+                                  : 'U',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  user?.name ?? 'User',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDarkMode
+                                        ? AppTheme.textPrimaryDark
+                                        : AppTheme.textPrimaryLight,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  user?.email ?? 'No email',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: isDarkMode
+                                        ? AppTheme.textSecondaryDark
+                                        : AppTheme.textSecondaryLight,
+                                  ),
+                                ),
+                                if (user?.isPremium == true)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(
+                                          0xFFFFD700,
+                                        ).withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '⭐ Premium Member',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: const Color(0xFFB8860B),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
             const SizedBox(height: 16),
             _buildSectionHeader('General', isDarkMode),
             Consumer<CurrencyProvider>(
@@ -784,7 +885,7 @@ class SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
             Center(
               child: Text(
-                'App Version 1.0.0',
+                'App Version 1.0.5',
                 style: GoogleFonts.plusJakartaSans(
                   color: isDarkMode
                       ? const Color(0xFFB0B0B0)

@@ -122,24 +122,37 @@ class AuthService {
 
   String getFriendlyErrorMessage(Object e) {
     if (e is FirebaseAuthException) {
+      String friendlyMessage;
+
       switch (e.code) {
         case 'network-request-failed':
-          return 'Network error. Please check your internet connection';
+          friendlyMessage =
+              'Network error. Please check your internet connection';
+          break;
         case 'operation-not-allowed':
-          return 'Sign-in method is not enabled';
+          friendlyMessage = 'Sign-in method is not enabled';
+          break;
         case 'user-not-found':
-          return 'No account found with this email';
+          friendlyMessage = 'No account found with this email';
+          break;
         case 'wrong-password':
-          return 'Incorrect password';
+          friendlyMessage = 'Incorrect password';
+          break;
         case 'invalid-email':
-          return 'Invalid email address';
+          friendlyMessage = 'Invalid email address';
+          break;
         case 'user-disabled':
-          return 'This account has been disabled';
+          friendlyMessage = 'This account has been disabled';
+          break;
         case 'too-many-requests':
-          return 'Too many login attempts. Please try again later.';
+          friendlyMessage = 'Too many login attempts. Please try again later.';
+          break;
         default:
-          return e.message ?? 'Authentication failed';
+          friendlyMessage = e.message ?? 'Authentication failed';
       }
+
+      // Include exact Firebase error code for debugging
+      return '$friendlyMessage\n\nError Code: ${e.code}';
     }
     return 'An error occurred. Please try again.';
   }
