@@ -7,12 +7,15 @@ import 'package:finflow/providers/transaction_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
 import 'package:finflow/providers/user_provider.dart';
+import 'package:finflow/providers/settings_provider.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:finflow/utils/debug_logger.dart';
 import 'package:finflow/models/transaction.dart';
-import 'package:finflow/screens/transactions_screen.dart';
+import 'package:finflow/providers/navigation_provider.dart';
 import 'package:finflow/screens/add_transaction_screen.dart';
 import 'package:finflow/services/sms_service.dart';
+import 'package:finflow/utils/utility.dart';
+// import removed
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -22,7 +25,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late int _selectedTabIndex;
   late TabController _tabController;
   late AnimationController _pulseController;
@@ -31,11 +34,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   final List<String> _tabLabels = ['Day', 'Week', 'Month', 'Year'];
 
-  // Detected SMS transactions
-  final List<Map<String, dynamic>> _detectedTransactions = [];
-
   late bool _smsPermissionDenied;
-  late bool _isSmsScanningEnabled;
+  bool _isScanning = false;
   late String _searchQuery;
 
   @override
@@ -43,7 +43,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     super.initState();
     _selectedTabIndex = 3;
     _smsPermissionDenied = false;
-    _isSmsScanningEnabled = false;
     _searchQuery = '';
 
     _tabController = TabController(
@@ -64,15 +63,54 @@ class _DashboardScreenState extends State<DashboardScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _smsService.onTransactionDetected = (detected) {
-      if (mounted && _isSmsScanningEnabled) {
-        setState(() {
-          _detectedTransactions.add(detected);
-        });
+      final settings = Provider.of<SettingsProvider>(context, listen: false);
+      if (mounted && (settings.isSmsScanEnabled || _isScanning)) {
+        Provider.of<TransactionProvider>(
+          context,
+          listen: false,
+        ).addDetectedSms(detected);
+      }
+    };
+
+    _smsService.onSmsLimitReached = () {
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: const Text('SMS Scan Limit Reached'),
+            content: const Text(
+              'You have reached the limit of 15 free bank transaction scans. '
+              'Upgrade to Premium for unlimited SMS scanning and additional features.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Later'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pushNamed(context, '/premium');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Upgrade Now'),
+              ),
+            ],
+          ),
+        );
       }
     };
 
     // Initialize providers after widget is mounted
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      // SMS scanning state is now handled by SettingsProvider
+
       if (!mounted) return;
 
       // Initialize transaction provider
@@ -81,26 +119,62 @@ class _DashboardScreenState extends State<DashboardScreen>
         listen: false,
       );
       if (!transactionProvider.isInitialized) {
-        await transactionProvider.initializeTransactions();
+        try {
+          await transactionProvider.initializeTransactions();
+        } catch (e) {
+          if (mounted) {
+            showErrorSnackBar(context, 'Failed to load transactions: $e');
+          }
+        }
       }
 
       // Initialize SMS permission
-      final granted = await _smsService.requestSmsPermission();
-      if (!mounted) return;
-      if (!granted && mounted) {
-        setState(() {
-          _smsPermissionDenied = true;
-        });
-      }
+      _checkSmsPermission();
     });
+
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  Future<void> _checkSmsPermission() async {
+    try {
+      final status = await Permission.sms.status;
+      if (mounted) {
+        setState(() {
+          _smsPermissionDenied = !status.isGranted;
+        });
+
+        // If granted, ensure scanning starts if enabled
+        if (status.isGranted) {
+          final settings = Provider.of<SettingsProvider>(
+            context,
+            listen: false,
+          );
+          if (settings.isSmsScanEnabled) {
+            await _smsService.startScanning();
+          }
+        }
+      }
+    } catch (e) {
+      logError('Error checking SMS permission', error: e);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkSmsPermission();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _pulseController.dispose();
     super.dispose();
   }
+
+  // Method _loadSmsScanningState removed as it's now handled by SettingsProvider
 
   List<Transaction> _getFilteredTransactions(List<Transaction> transactions) {
     final now = DateTime.now();
@@ -131,18 +205,17 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Provider.of<ThemeProvider>(context).isDarkMode;
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final currentUser = userProvider.currentUser;
-    final transactionProvider = Provider.of<TransactionProvider>(context);
-    final balance = transactionProvider.totalBalance;
-    final income = transactionProvider.totalIncome;
-    final expense = transactionProvider.totalExpense;
+    final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
 
-    // Debug logging
-    logError(
-      'Dashboard build: Balance: $balance, Income: $income, Expense: $expense',
+    // Use select to avoid rebuilds when unrelated state changes
+    final currentUser = context.select((UserProvider p) => p.currentUser);
+    final currencySymbol = context.select(
+      (CurrencyProvider p) => p.currentCurrencySymbol,
     );
+    final isInitialized = context.select(
+      (TransactionProvider p) => p.isInitialized,
+    );
+    final isLoading = context.select((TransactionProvider p) => p.isLoading);
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -159,59 +232,80 @@ class _DashboardScreenState extends State<DashboardScreen>
         ),
         actions: [
           if (currentUser?.isPremium == true)
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _isSmsScanningEnabled = !_isSmsScanningEnabled;
-                  if (_isSmsScanningEnabled) {
-                    _smsService.startScanning();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('SMS Scanner Activated')),
-                    );
-                    _pulseController.repeat(reverse: true);
+            Consumer<SettingsProvider>(
+              builder: (context, settings, _) => GestureDetector(
+                onTap: () async {
+                  if (!settings.isSmsScanEnabled) {
+                    setState(() => _isScanning = true);
+                    await settings.setSmsScanEnabled(true);
+                    if (!mounted) return;
+                    setState(() => _isScanning = false);
+
+                    if (settings.isSmsScanEnabled) {
+                      _pulseController.repeat(reverse: true);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('SMS Scanner Activated'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    } else {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'SMS Permission Denied. Please enable it in Settings.',
+                          ),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
                   } else {
-                    _smsService.stopScanning();
+                    await settings.setSmsScanEnabled(false);
+                    if (!mounted) return;
+                    _pulseController.stop();
+                    _pulseController.value = 0;
+                    if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('SMS Scanner Deactivated')),
                     );
-                    _pulseController.stop();
-                    _pulseController.value = 0;
                   }
-                });
-              },
-              child: Container(
-                margin: const EdgeInsets.only(right: 8),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.primaryColor.withValues(alpha: 0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: AnimatedBuilder(
-                  animation: _pulseController,
-                  builder: (context, child) {
-                    return Transform.scale(
-                      scale: _isSmsScanningEnabled
-                          ? _scaleAnimation.value
-                          : 1.0,
-                      child: Icon(
-                        _isSmsScanningEnabled
-                            ? Icons.qr_code_scanner
-                            : Icons.qr_code_scanner,
-                        color: _isSmsScanningEnabled
-                            ? Colors.green
-                            : Colors.grey,
-                        size: 22,
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.05),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
                       ),
-                    );
-                  },
+                    ],
+                  ),
+                  child: RepaintBoundary(
+                    child: AnimatedBuilder(
+                      animation: _pulseController,
+                      builder: (context, child) {
+                        return Transform.scale(
+                          scale: settings.isSmsScanEnabled
+                              ? _scaleAnimation.value
+                              : 1.0,
+                          child: Icon(
+                            Icons.qr_code_scanner,
+                            color: settings.isSmsScanEnabled
+                                ? Colors.green
+                                : Colors.grey,
+                            size: 22,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -245,130 +339,170 @@ class _DashboardScreenState extends State<DashboardScreen>
           children: [
             if (_smsPermissionDenied)
               MaterialBanner(
-                content: const Text(
-                  'SMS permission is required for smart scanning. Please grant permission to enable this feature.',
+                backgroundColor: AppTheme.expenseColor.withValues(alpha: 0.1),
+                content: Text(
+                  'SMS permission is required for smart scanning. Financial messages will not be detected.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    color: AppTheme.expenseColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                leading: const Icon(
+                  Icons.warning_amber_rounded,
+                  color: AppTheme.expenseColor,
                 ),
                 actions: [
                   TextButton(
                     onPressed: () async {
-                      await openAppSettings();
+                      final status = await Permission.sms.status;
+                      if (status.isPermanentlyDenied) {
+                        await openAppSettings();
+                      } else {
+                        final granted = await _smsService
+                            .requestSmsPermission();
+                        if (granted) {
+                          _checkSmsPermission();
+                        }
+                      }
                     },
-                    child: const Text('Open Settings'),
+                    child: Text(
+                      'Grant Permission',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.expenseColor,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _smsPermissionDenied = false;
+                      });
+                    },
+                    child: Text(
+                      'Dismiss',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
+                    ),
                   ),
                 ],
               ),
             Expanded(
-              child: Consumer2<TransactionProvider, CurrencyProvider>(
-                builder:
-                    (context, transactionProvider, currencyProvider, child) {
-                      final allTransactions = transactionProvider.transactions;
-                      final filteredTransactions = _getFilteredTransactions(
-                        allTransactions,
-                      );
-                      final balance = filteredTransactions.fold(
-                        0.0,
-                        (sum, t) => sum + (t.isIncome ? t.amount : -t.amount),
-                      );
-                      final currencySymbol =
-                          currencyProvider.currentCurrencySymbol;
+              child: !isInitialized && isLoading
+                  ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('Loading your financial flow...'),
+                        ],
+                      ),
+                    )
+                  : CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 8),
+                              _buildTabBar(isDarkMode),
+                              const SizedBox(height: 14),
 
-                      final now = DateTime.now();
-                      final startOfMonth = DateTime(now.year, now.month, 1);
-                      final startOfLastMonth = DateTime(
-                        now.year,
-                        now.month - 1,
-                        1,
-                      );
-                      final endOfLastMonth = startOfMonth.subtract(
-                        const Duration(days: 1),
-                      );
+                              // Balance Section - with Selector
+                              Selector<
+                                TransactionProvider,
+                                Map<String, double>
+                              >(
+                                selector: (_, p) => {
+                                  'balance': p.totalBalance,
+                                  'change': p.monthlyChange,
+                                },
+                                builder: (context, data, _) {
+                                  return _buildBalanceCard(
+                                    data['balance']!,
+                                    currencySymbol,
+                                    data['change']!,
+                                    isDarkMode,
+                                  );
+                                },
+                              ),
 
-                      final thisMonthTransactions = allTransactions
-                          .where(
-                            (t) =>
-                                t.date.isAfter(
-                                  startOfMonth.subtract(
-                                    const Duration(days: 1),
-                                  ),
-                                ) &&
-                                t.date.isBefore(
-                                  now.add(const Duration(days: 1)),
-                                ),
-                          )
-                          .toList();
+                              const SizedBox(height: 12),
 
-                      final lastMonthTransactions = allTransactions
-                          .where(
-                            (t) =>
-                                t.date.isAfter(
-                                  startOfLastMonth.subtract(
-                                    const Duration(days: 1),
-                                  ),
-                                ) &&
-                                t.date.isBefore(
-                                  endOfLastMonth.add(const Duration(days: 1)),
-                                ),
-                          )
-                          .toList();
+                              // Income/Expense Section - with Selector
+                              Selector<
+                                TransactionProvider,
+                                Map<String, double>
+                              >(
+                                selector: (_, p) => {
+                                  'income': p.totalIncome,
+                                  'expense': p.totalExpense,
+                                },
+                                builder: (context, data, _) {
+                                  return _buildIncomeExpenseCards(
+                                    data['income']!,
+                                    data['expense']!,
+                                    currencySymbol,
+                                    isDarkMode,
+                                  );
+                                },
+                              ),
 
-                      final thisMonthTotal = thisMonthTransactions.fold(
-                        0.0,
-                        (sum, item) =>
-                            sum + (item.isIncome ? item.amount : -item.amount),
-                      );
-                      final lastMonthTotal = lastMonthTransactions.fold(
-                        0.0,
-                        (sum, item) =>
-                            sum + (item.isIncome ? item.amount : -item.amount),
-                      );
-                      final monthlyChange = thisMonthTotal - lastMonthTotal;
-
-                      final income = filteredTransactions
-                          .where((t) => t.isIncome)
-                          .fold(0.0, (sum, item) => sum + item.amount);
-                      final expense = filteredTransactions
-                          .where((t) => !t.isIncome)
-                          .fold(0.0, (sum, item) => sum + item.amount);
-
-                      return SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            const SizedBox(height: 8),
-                            _buildTabBar(isDarkMode),
-                            const SizedBox(height: 14),
-                            _buildBalanceCard(
-                              balance,
-                              currencySymbol,
-                              monthlyChange,
-                              isDarkMode,
-                            ),
-                            const SizedBox(height: 12),
-                            _buildIncomeExpenseCards(
-                              income,
-                              expense,
-                              currencySymbol,
-                              isDarkMode,
-                            ),
-                            const SizedBox(height: 14),
-                            const SizedBox(height: 16),
-                            _buildSearchBar(isDarkMode),
-                            const SizedBox(height: 12),
-                            _buildDetectedTransactionsCard(
-                              currencySymbol,
-                              isDarkMode,
-                            ),
-                            _buildRecentTransactionsHeader(isDarkMode),
-                            _buildTransactionsList(
-                              filteredTransactions,
-                              currencySymbol,
-                              isDarkMode,
-                            ),
-                            const SizedBox(height: 100),
-                          ],
+                              const SizedBox(height: 14),
+                              const SizedBox(height: 16),
+                              _buildSearchBar(isDarkMode),
+                              _buildScannerStatus(isDarkMode),
+                              const SizedBox(height: 12),
+                              Selector2<
+                                SettingsProvider,
+                                TransactionProvider,
+                                Map<String, dynamic>
+                              >(
+                                selector: (_, settings, trans) => {
+                                  'isEnabled': settings.isSmsScanEnabled,
+                                  'detected': trans.detectedSmsTransactions,
+                                },
+                                builder: (context, data, _) {
+                                  return _buildDetectedTransactionsCard(
+                                    data['isEnabled'],
+                                    data['detected'],
+                                    currencySymbol,
+                                    isDarkMode,
+                                  );
+                                },
+                              ),
+                              _buildRecentTransactionsHeader(isDarkMode),
+                            ],
+                          ),
                         ),
-                      );
-                    },
-              ),
+
+                        // Transactions List - with Selector and lazy loading
+                        Selector<TransactionProvider, List<Transaction>>(
+                          selector: (_, p) => p.transactions,
+                          builder: (context, allTransactions, _) {
+                            final filteredTransactions =
+                                _getFilteredTransactions(allTransactions);
+                            return SliverPadding(
+                              padding: const EdgeInsets.only(
+                                top: 8,
+                                bottom: 20,
+                              ),
+                              sliver: _buildSliverTransactionsList(
+                                filteredTransactions,
+                                currencySymbol,
+                                isDarkMode,
+                              ),
+                            );
+                          },
+                        ),
+
+                        const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -667,8 +801,13 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildDetectedTransactionsCard(String symbol, bool isDarkMode) {
-    if (_detectedTransactions.isEmpty) {
+  Widget _buildDetectedTransactionsCard(
+    bool isEnabled,
+    List<Map<String, dynamic>> detectedTransactions,
+    String symbol,
+    bool isDarkMode,
+  ) {
+    if (!isEnabled) {
       return const SizedBox.shrink();
     }
 
@@ -703,249 +842,380 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  'SMS Smart Scanning',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: isDarkMode
-                        ? AppTheme.textPrimaryDark
-                        : AppTheme.textPrimaryLight,
+                Expanded(
+                  child: Text(
+                    'SMS Smart Scanning',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: isDarkMode
+                          ? AppTheme.textPrimaryDark
+                          : AppTheme.textPrimaryLight,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _isScanning
+                        ? AppTheme.accentColor.withValues(alpha: 0.1)
+                        : Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _isScanning
+                          ? AppTheme.accentColor.withValues(alpha: 0.2)
+                          : Colors.green.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_isScanning)
+                        const SizedBox(
+                          width: 8,
+                          height: 8,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              AppTheme.accentColor,
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Colors.green,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _isScanning ? 'SCANNING...' : 'SCANNER ACTIVE',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: _isScanning
+                              ? AppTheme.accentColor
+                              : Colors.green,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _detectedTransactions.length,
-              itemBuilder: (context, index) {
-                final detected = _detectedTransactions[index];
-
-                // Extract bank name and transaction details from detected data
-                final bankName =
-                    detected['bankName'] ??
-                    detected['merchant'] ??
-                    'Unknown Bank';
-
-                // Fix transaction type detection from SMS service
-                final isDebit = detected['isDebit'] ?? false;
-                final isCredit = detected['isCredit'] ?? !isDebit;
-
-                // Determine transaction type and color
-                final transactionType = isCredit ? 'Received' : 'Sent';
-                final transactionAmount = detected['amount'] ?? 0.0;
-                final isIncome = isCredit;
-
-                // Format the transaction note to show bank name instead of full description
-                final shortNote =
-                    detected['note'] ?? '$bankName - $transactionType';
-
-                // Get the proper transaction type for the AddTransactionScreen
-                final transactionTypeForAdd = isIncome ? 'Income' : 'Expense';
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isCredit
-                        ? const Color(0xFF10B981).withValues(alpha: 0.05)
-                        : const Color(0xFFF43F5E).withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isCredit
-                          ? const Color(0xFF10B981).withValues(alpha: 0.2)
-                          : const Color(0xFFF43F5E).withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Row(
+            if (detectedTransactions.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                child: Center(
+                  child: Column(
                     children: [
-                      Icon(
-                        isCredit ? Icons.arrow_downward : Icons.arrow_upward,
-                        color: isCredit
-                            ? const Color(0xFF10B981)
-                            : const Color(0xFFF43F5E),
-                        size: 20,
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accentColor.withValues(alpha: 0.05),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _isScanning ? Icons.search : Icons.radar,
+                          color: AppTheme.accentColor.withValues(alpha: 0.4),
+                          size: 32,
+                        ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // First row: Bank name and amount
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    bankName,
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: isDarkMode
-                                          ? AppTheme.textPrimaryDark
-                                          : AppTheme.textPrimaryLight,
+                      const SizedBox(height: 12),
+                      Text(
+                        _isScanning
+                            ? 'Scanning recent SMS inbox...'
+                            : 'No bank transactions detected',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: isDarkMode
+                              ? const Color(0xFFB0B0B0)
+                              : const Color(0xFF64748B),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _isScanning
+                            ? 'This may take a few seconds'
+                            : 'Showing messages from last 100 SMS',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          color: isDarkMode
+                              ? const Color(0xFF808080)
+                              : const Color(0xFF94A3B8),
+                        ),
+                      ),
+                      if (!_isScanning) ...[
+                        const SizedBox(height: 16),
+                        TextButton.icon(
+                          onPressed: () async {
+                            setState(() {
+                              _isScanning = true;
+                              context
+                                  .read<TransactionProvider>()
+                                  .clearDetectedSms();
+                            });
+                            await _smsService.checkRecentSms();
+                            if (mounted) {
+                              setState(() {
+                                _isScanning = false;
+                              });
+                            }
+                          },
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: const Text('Scan Again'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppTheme.accentColor,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: detectedTransactions.length,
+                itemBuilder: (context, index) {
+                  final detected = detectedTransactions[index];
+
+                  // Extract bank name and transaction details from detected data
+                  final bankName =
+                      detected['bankName'] ??
+                      detected['merchant'] ??
+                      'Unknown Bank';
+
+                  // Fix transaction type detection from SMS service
+                  final isDebit = detected['isDebit'] ?? false;
+                  final isCredit = detected['isCredit'] ?? !isDebit;
+
+                  // Determine transaction type and color
+                  final transactionType = isCredit ? 'Received' : 'Sent';
+                  final transactionAmount = detected['amount'] ?? 0.0;
+                  final isIncome = isCredit;
+
+                  // Format the transaction note to show bank name instead of full description
+                  final shortNote =
+                      detected['note'] ?? '$bankName - $transactionType';
+
+                  // Get the proper transaction type for the AddTransactionScreen
+                  final transactionTypeForAdd = isIncome ? 'Income' : 'Expense';
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isCredit
+                          ? const Color(0xFF10B981).withValues(alpha: 0.05)
+                          : const Color(0xFFF43F5E).withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isCredit
+                            ? const Color(0xFF10B981).withValues(alpha: 0.2)
+                            : const Color(0xFFF43F5E).withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isCredit ? Icons.arrow_upward : Icons.arrow_downward,
+                          color: isCredit
+                              ? const Color(0xFF10B981)
+                              : const Color(0xFFF43F5E),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // First row: Bank name and amount
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      bankName,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: isDarkMode
+                                            ? AppTheme.textPrimaryDark
+                                            : AppTheme.textPrimaryLight,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                Text(
-                                  '$transactionType: ${AppTheme.formatCurrency(transactionAmount.abs(), symbol: symbol)}',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    color: isCredit
-                                        ? const Color(0xFF10B981)
-                                        : const Color(0xFFF43F5E),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            // Second row: Category and date
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isCredit
-                                        ? const Color(
-                                            0xFF10B981,
-                                          ).withValues(alpha: 0.15)
-                                        : const Color(
-                                            0xFFF43F5E,
-                                          ).withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    detected['category'] ??
-                                        (isCredit ? 'Income' : 'Expense'),
+                                  Text(
+                                    '$transactionType: ${AppTheme.formatCurrency(transactionAmount.abs(), symbol: symbol)}',
                                     style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
                                       color: isCredit
                                           ? const Color(0xFF10B981)
                                           : const Color(0xFFF43F5E),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  DateFormat('MMM dd').format(detected['date']),
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 10,
-                                    color: isDarkMode
-                                        ? const Color(0xFFB0B0B0)
-                                        : const Color(0xFF64748B),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            // Third row: Short description
-                            Text(
-                              shortNote,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 10,
-                                color: isDarkMode
-                                    ? const Color(0xFFB0B0B0)
-                                    : const Color(0xFF64748B),
-                                fontWeight: FontWeight.w500,
+                                ],
                               ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+                              const SizedBox(height: 4),
+                              // Second row: Category and date
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isCredit
+                                          ? const Color(
+                                              0xFF10B981,
+                                            ).withValues(alpha: 0.15)
+                                          : const Color(
+                                              0xFFF43F5E,
+                                            ).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      detected['category'] ??
+                                          (isCredit ? 'Income' : 'Expense'),
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: isCredit
+                                            ? const Color(0xFF10B981)
+                                            : const Color(0xFFF43F5E),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    DateFormat(
+                                      'MMM dd',
+                                    ).format(detected['date']),
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 10,
+                                      color: isDarkMode
+                                          ? const Color(0xFFB0B0B0)
+                                          : const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              // Third row: Short description
+                              Text(
+                                shortNote,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  color: isDarkMode
+                                      ? const Color(0xFFB0B0B0)
+                                      : const Color(0xFF64748B),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                final transactionProvider = context
+                                    .read<TransactionProvider>();
+                                if (!transactionProvider.isAuthenticated) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Please log in to add transactions',
+                                      ),
+                                      backgroundColor: AppTheme.expenseColor,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => AddTransactionScreen(
+                                      transactionToEdit: {
+                                        'amount': transactionAmount.abs(),
+                                        'note': shortNote,
+                                        'date': detected['date']
+                                            .toIso8601String(),
+                                        'type': transactionTypeForAdd,
+                                        'category': detected['category'],
+                                        'merchant': bankName,
+                                        // Include userId from detected transaction for validation
+                                        'userId': detected['userId'],
+                                      },
+                                    ),
+                                  ),
+                                ).then((result) {
+                                  if (result == true && mounted) {
+                                    transactionProvider.removeDetectedSms(
+                                      detected,
+                                    );
+                                  }
+                                });
+                              },
+                              child: Text(
+                                'Add',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.accentColor,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                // Allow user to edit the detected transaction before adding
+                                _showEditDetectedTransactionDialog(
+                                  context,
+                                  detected,
+                                  symbol,
+                                  isDarkMode,
+                                );
+                              },
+                              child: Text(
+                                'Edit',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDarkMode
+                                      ? const Color(0xFFB0B0B0)
+                                      : const Color(0xFF64748B),
+                                ),
+                              ),
                             ),
                           ],
                         ),
-                      ),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextButton(
-                            onPressed: () {
-                              // Verify user is authenticated before allowing to add transaction
-                              final transactionProvider =
-                                  Provider.of<TransactionProvider>(
-                                    context,
-                                    listen: false,
-                                  );
-
-                              if (!transactionProvider.isAuthenticated) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Please log in to add transactions',
-                                    ),
-                                    backgroundColor: AppTheme.expenseColor,
-                                  ),
-                                );
-                                return;
-                              }
-
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => AddTransactionScreen(
-                                    transactionToEdit: {
-                                      'amount': transactionAmount.abs(),
-                                      'note': shortNote,
-                                      'date': detected['date']
-                                          .toIso8601String(),
-                                      'type': transactionTypeForAdd,
-                                      'category': detected['category'],
-                                      'merchant': bankName,
-                                      // Include userId from detected transaction for validation
-                                      'userId': detected['userId'],
-                                    },
-                                  ),
-                                ),
-                              ).then((result) {
-                                if (result == true && mounted) {
-                                  setState(() {
-                                    _detectedTransactions.remove(detected);
-                                  });
-                                }
-                              });
-                            },
-                            child: Text(
-                              'Add',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.accentColor,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              // Allow user to edit the detected transaction before adding
-                              _showEditDetectedTransactionDialog(
-                                context,
-                                detected,
-                                symbol,
-                                isDarkMode,
-                              );
-                            },
-                            child: Text(
-                              'Edit',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: isDarkMode
-                                    ? const Color(0xFFB0B0B0)
-                                    : const Color(0xFF64748B),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+                      ],
+                    ),
+                  );
+                },
+              ),
           ],
         ),
       ),
@@ -1041,12 +1311,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           GestureDetector(
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const TransactionsScreen(),
-                ),
-              );
+              Provider.of<NavigationProvider>(context, listen: false).setTab(1);
             },
             child: Text(
               'See All',
@@ -1062,7 +1327,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildTransactionsList(
+  Widget _buildSliverTransactionsList(
     List<Transaction> transactions,
     String symbol,
     bool isDarkMode,
@@ -1080,27 +1345,21 @@ class _DashboardScreenState extends State<DashboardScreen>
           }).toList();
 
     if (filteredTransactions.isEmpty) {
-      return _buildEmptyState(isDarkMode);
+      return SliverToBoxAdapter(child: _buildEmptyState(isDarkMode));
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 20),
-      child: ListView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: filteredTransactions.length.clamp(0, 10),
-        itemBuilder: (context, index) {
-          final transaction = filteredTransactions[index];
-          final isExpense = !transaction.isIncome;
+    return SliverList(
+      delegate: SliverChildBuilderDelegate((context, index) {
+        final transaction = filteredTransactions[index];
+        final isExpense = !transaction.isIncome;
 
-          return _buildTransactionTile(
-            transaction,
-            symbol,
-            isExpense,
-            isDarkMode,
-          );
-        },
-      ),
+        return _buildTransactionTile(
+          transaction,
+          symbol,
+          isExpense,
+          isDarkMode,
+        );
+      }, childCount: filteredTransactions.length.clamp(0, 10)),
     );
   }
 
@@ -1183,15 +1442,17 @@ class _DashboardScreenState extends State<DashboardScreen>
               context,
               listen: false,
             );
-            await transactionProvider.deleteTransaction(transaction.id);
-            if (!mounted) return false;
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Transaction deleted successfully'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+            try {
+              await transactionProvider.deleteTransaction(transaction.id);
+              if (!mounted) return false;
+              if (mounted) {
+                showSnackBar(context, 'Transaction deleted successfully');
+              }
+            } catch (e) {
+              if (mounted) {
+                showErrorSnackBar(context, 'Failed to delete transaction: $e');
+              }
+              return false;
             }
           }
           return shouldDelete ?? false;
@@ -1281,54 +1542,43 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ),
           ),
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color:
-                  (isExpense
-                          ? const Color(0xFFF43F5E)
-                          : const Color(0xFF10B981))
-                      .withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color:
-                    (isExpense
-                            ? const Color(0xFFF43F5E)
-                            : const Color(0xFF10B981))
-                        .withValues(alpha: 0.3),
-              ),
-            ),
-            child: RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: symbol,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: isExpense
-                          ? const Color(0xFFF43F5E)
-                          : const Color(0xFF10B981),
-                    ),
+          trailing: Consumer<CurrencyProvider>(
+            builder: (context, currencyProvider, child) {
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color:
+                      (isExpense
+                              ? const Color(0xFFF43F5E)
+                              : const Color(0xFF10B981))
+                          .withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color:
+                        (isExpense
+                                ? const Color(0xFFF43F5E)
+                                : const Color(0xFF10B981))
+                            .withValues(alpha: 0.3),
                   ),
-                  TextSpan(
-                    text: transaction.amount.abs().toStringAsFixed(
-                      transaction.amount.abs().truncateToDouble() ==
-                              transaction.amount.abs()
-                          ? 0
-                          : 2,
-                    ),
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: isExpense
-                          ? const Color(0xFFF43F5E)
-                          : const Color(0xFF10B981),
-                    ),
+                ),
+                child: Text(
+                  currencyProvider.formatConvertedAmount(
+                    transaction.amount.abs(),
+                    transaction.currencyCode,
                   ),
-                ],
-              ),
-            ),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: isExpense
+                        ? const Color(0xFFF43F5E)
+                        : const Color(0xFF10B981),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -1376,6 +1626,39 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildScannerStatus(bool isDarkMode) {
+    return Consumer<SettingsProvider>(
+      builder: (context, settings, _) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            Icon(
+              settings.isSmsScanEnabled ? Icons.sensors : Icons.sensors_off,
+              size: 14,
+              color: settings.isSmsScanEnabled
+                  ? Colors.green
+                  : (isDarkMode ? Colors.grey[600] : Colors.grey[400]),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              settings.isSmsScanEnabled
+                  ? 'SMS Smart Scanner IS ON'
+                  : 'SMS Smart Scanner IS OFF',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: settings.isSmsScanEnabled
+                    ? Colors.green
+                    : (isDarkMode ? Colors.grey[600] : Colors.grey[400]),
+                letterSpacing: 0.3,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

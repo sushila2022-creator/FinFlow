@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +7,8 @@ import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:finflow/models/transaction.dart';
+import 'package:finflow/screens/transactions_screen.dart';
+import 'package:finflow/screens/category_detail_screen.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -17,16 +18,14 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
-  int _selectedTabIndex = 0;
+  int _selectedTabIndex = 2; // Default to Month for better visibility
   bool _showExpenses = true;
   final List<String> _tabLabels = ['Today', 'Week', 'Month', 'Year'];
   DateTime _selectedStartDate = DateTime.now();
   DateTime _selectedEndDate = DateTime.now();
 
-  // Caching and debouncing
+  // Caching
   final Map<String, Map<String, double>> _cachedCategoryData = {};
-  Timer? _debounceTimer;
-  static const Duration _debounceDuration = Duration(milliseconds: 300);
 
   @override
   void initState() {
@@ -34,11 +33,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     _updateDateRangeForTab(_selectedTabIndex);
   }
 
-  @override
-  void dispose() {
-    _debounceTimer?.cancel();
-    super.dispose();
-  }
 
   void _updateDateRangeForTab(int tabIndex) {
     final now = DateTime.now();
@@ -83,7 +77,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     for (var i = 0; i < transactions.length; i++) {
       final transaction = transactions[i];
       if (transaction.isIncome == targetIsIncome) {
-        final category = transaction.categoryName;
+        final category = transaction.categoryName.trim();
         final amount = transaction.amount.abs();
         categoryData.update(
           category,
@@ -124,12 +118,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return '$transactionCount-$lastTransactionDate-$filterType-$dateRange-$tabIndex-${transactions.isNotEmpty ? transactions.first.id : 'no-transactions'}';
   }
 
-  void _debouncedUpdateTab(int tabIndex) {
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(_debounceDuration, () {
-      setState(() {
-        _selectedTabIndex = tabIndex;
-      });
+  void _updateTab(int tabIndex) {
+    setState(() {
+      _selectedTabIndex = tabIndex;
     });
   }
 
@@ -168,6 +159,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       body: SafeArea(
         child: Consumer2<TransactionProvider, CurrencyProvider>(
           builder: (context, transactionProvider, currencyProvider, child) {
+            if (!transactionProvider.isInitialized &&
+                transactionProvider.isLoading) {
+              return const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Analyzing your data...'),
+                  ],
+                ),
+              );
+            }
+
             final allTransactions = transactionProvider.transactions;
             final currencySymbol = currencyProvider.currentCurrencySymbol;
 
@@ -303,7 +308,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             return Expanded(
               child: GestureDetector(
                 onTap: () {
-                  _debouncedUpdateTab(index);
+                  _updateTab(index);
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
@@ -389,7 +394,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   child: Row(
                     children: [
                       Icon(
-                        Icons.south_west,
+                        Icons.arrow_downward,
                         size: 16,
                         color: _showExpenses
                             ? AppTheme.expenseColor
@@ -439,7 +444,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   child: Row(
                     children: [
                       Icon(
-                        Icons.north_east,
+                        Icons.arrow_upward,
                         size: 16,
                         color: !_showExpenses
                             ? AppTheme.incomeColor
@@ -505,15 +510,27 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
-          'Spending by Category',
+          _showExpenses ? 'Spending by Category' : 'Income by Category',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 18,
             fontWeight: FontWeight.w700,
-            color: isDarkMode ? Colors.white : AppTheme.primaryColor,
+            color: _showExpenses ? AppTheme.expenseColor : AppTheme.incomeColor,
           ),
         ),
         GestureDetector(
-          onTap: () {},
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => TransactionsScreen(
+                  initialStartDate: _selectedStartDate,
+                  initialEndDate: _selectedEndDate,
+                  title: '${_showExpenses ? 'Expense' : 'Income'}: ${_getPeriodLabel()}',
+                  initialIsIncome: !_showExpenses,
+                ),
+              ),
+            );
+          },
           child: Text(
             'View All',
             style: GoogleFonts.plusJakartaSans(
@@ -588,105 +605,147 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final index = sortedEntries.indexOf(entry);
         final categoryColor = colors[index];
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDarkMode
-                  ? const Color(0xFF2D2D2D)
-                  : const Color(0xFFF1F5F9),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: isDarkMode
-                    ? Colors.black.withValues(alpha: 0.1)
-                    : Colors.black.withValues(alpha: 0.02),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CategoryDetailScreen(
+                  categoryName: entry.key,
+                  isIncome: !_showExpenses,
+                ),
               ),
-            ],
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Category Color Indicator
-              Container(
-                width: 8,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: categoryColor,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(8),
-                    bottomLeft: Radius.circular(8),
+            );
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDarkMode
+                    ? const Color(0xFF2D2D2D)
+                    : const Color(0xFFF1F5F9),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isDarkMode
+                      ? Colors.black.withValues(alpha: 0.1)
+                      : Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Category Color Indicator
+                Container(
+                  width: 8,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: categoryColor,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(8),
+                      bottomLeft: Radius.circular(8),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
+                const SizedBox(width: 12),
 
-              // Category Icon
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: categoryColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
+                // Category Icon
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: categoryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    AppTheme.getCategoryIcon(entry.key),
+                    size: 18,
+                    color: categoryColor,
+                  ),
                 ),
-                child: Icon(
-                  AppTheme.getCategoryIcon(entry.key),
-                  size: 18,
-                  color: categoryColor,
-                ),
-              ),
-              const SizedBox(width: 12),
+                const SizedBox(width: 12),
 
-              // Category Name and Percentage
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                // Category Name and Percentage
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        entry.key,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: isDarkMode ? Colors.white : AppTheme.primaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (_showExpenses ? AppTheme.expenseColor : AppTheme.incomeColor).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              _showExpenses ? 'EXPENSE' : 'INCOME',
+                              style: TextStyle(
+                                fontSize: 8,
+                                fontWeight: FontWeight.w800,
+                                color: _showExpenses ? AppTheme.expenseColor : AppTheme.incomeColor,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${((entry.value / totalAmount) * 100).toStringAsFixed(1)}%',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              color: isDarkMode ? const Color(0xFFB0B0B0) : const Color(0xFF64748B),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Amount and Count - Right-aligned
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      entry.key,
+                      AppTheme.formatCurrency(entry.value, symbol: currencySymbol),
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: isDarkMode
-                            ? Colors.white
-                            : AppTheme.primaryColor,
+                        fontWeight: FontWeight.w700,
+                        color: isDarkMode ? Colors.white : AppTheme.primaryColor,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${((entry.value / totalAmount) * 100).toStringAsFixed(1)}%',
+                      'Details >',
                       style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        color: isDarkMode
-                            ? const Color(0xFFB0B0B0)
-                            : const Color(0xFF64748B),
-                        fontWeight: FontWeight.w500,
+                        fontSize: 10,
+                        color: AppTheme.incomeColor,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
-              ),
-
-              // Amount - Right-aligned and vertically centered
-              Container(
-                alignment: Alignment.centerRight,
-                constraints: const BoxConstraints(minWidth: 80),
-                child: Text(
-                  AppTheme.formatCurrency(entry.value, symbol: currencySymbol),
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: isDarkMode ? Colors.white : AppTheme.primaryColor,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       }).toList(),

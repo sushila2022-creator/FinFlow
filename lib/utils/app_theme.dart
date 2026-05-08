@@ -83,64 +83,84 @@ class AppTheme {
         color: textPrimaryLight,
       ),
       headlineLarge: GoogleFonts.plusJakartaSans(
-        fontSize: 10,
+        fontSize: 32,
         fontWeight: FontWeight.w600,
         color: textPrimaryLight,
+        height: 1.25,
       ),
       headlineMedium: GoogleFonts.plusJakartaSans(
-        fontSize: 10,
+        fontSize: 28,
         fontWeight: FontWeight.w600,
         color: textPrimaryLight,
+        height: 1.28,
       ),
       headlineSmall: GoogleFonts.plusJakartaSans(
-        fontSize: 10,
+        fontSize: 24,
         fontWeight: FontWeight.w600,
         color: textPrimaryLight,
+        height: 1.33,
       ),
       titleLarge: GoogleFonts.plusJakartaSans(
-        fontSize: 12,
+        fontSize: 22,
         fontWeight: FontWeight.w600,
         color: textPrimaryLight,
+        height: 1.27,
       ),
       titleMedium: GoogleFonts.plusJakartaSans(
-        fontSize: 12,
-        fontWeight: FontWeight.w500,
-        color: textPrimaryLight,
-      ),
-      titleSmall: GoogleFonts.plusJakartaSans(
-        fontSize: 12,
+        fontSize: 16,
         fontWeight: FontWeight.w600,
         color: textPrimaryLight,
+        height: 1.50,
+        letterSpacing: 0.15,
+      ),
+      titleSmall: GoogleFonts.plusJakartaSans(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: textPrimaryLight,
+        height: 1.42,
+        letterSpacing: 0.1,
       ),
       bodyLarge: GoogleFonts.plusJakartaSans(
-        fontSize: 12,
+        fontSize: 16,
         fontWeight: FontWeight.w400,
         color: textPrimaryLight,
+        height: 1.50,
+        letterSpacing: 0.5,
       ),
       bodyMedium: GoogleFonts.plusJakartaSans(
-        fontSize: 12,
+        fontSize: 14,
         fontWeight: FontWeight.w400,
         color: textSecondaryLight,
+        height: 1.42,
+        letterSpacing: 0.25,
       ),
       bodySmall: GoogleFonts.plusJakartaSans(
-        fontSize: 10,
+        fontSize: 12,
         fontWeight: FontWeight.w400,
         color: textSecondaryLight,
+        height: 1.33,
+        letterSpacing: 0.4,
       ),
       labelLarge: GoogleFonts.plusJakartaSans(
-        fontSize: 12,
+        fontSize: 14,
         fontWeight: FontWeight.w500,
         color: textPrimaryLight,
+        height: 1.42,
+        letterSpacing: 0.1,
       ),
       labelMedium: GoogleFonts.plusJakartaSans(
-        fontSize: 10,
+        fontSize: 12,
         fontWeight: FontWeight.w500,
         color: textSecondaryLight,
+        height: 1.33,
+        letterSpacing: 0.5,
       ),
       labelSmall: GoogleFonts.plusJakartaSans(
-        fontSize: 9,
+        fontSize: 11,
         fontWeight: FontWeight.w500,
         color: textSecondaryLight,
+        height: 1.45,
+        letterSpacing: 0.5,
       ),
     );
   }
@@ -379,7 +399,8 @@ class AppTheme {
       primaryColor: primaryColor,
       colorScheme: ColorScheme.fromSeed(
         seedColor: primaryColor,
-        primary: primaryColor,
+        primary:
+            accentColor, // Use accentColor for primary in dark mode for better visibility
         secondary: accentColor,
         tertiary: secondaryEmerald,
         surface: surfaceDark,
@@ -414,12 +435,21 @@ class AppTheme {
 
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: primaryColor,
-          side: const BorderSide(color: primaryColor, width: 1.5),
+          foregroundColor:
+              accentColor, // Corrected to accentColor for dark mode
+          side: const BorderSide(color: accentColor, width: 1.5),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+        ),
+      ),
+
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor:
+              accentColor, // Use accentColor for visibility in dark mode
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         ),
       ),
 
@@ -533,150 +563,195 @@ class AppTheme {
 
   /// Get category icon based on category name
   static IconData getCategoryIcon(String categoryName) {
-    final name = categoryName.toLowerCase();
+    final name = categoryName.toLowerCase().trim();
     switch (name) {
       // Expense categories
       case 'groceries':
+      case 'supermarket':
         return Icons.local_grocery_store;
       case 'rent':
+      case 'housing':
+      case 'mortgage':
         return Icons.home;
       case 'electricity':
+      case 'light':
+      case 'power':
         return Icons.electrical_services;
       case 'mobile':
-        return Icons.phone_android;
+      case 'wifi':
+      case 'recharge':
+      case 'mobile/wifi':
+        return Icons.wifi;
       case 'petrol':
+      case 'fuel':
+      case 'petrol/fuel':
+      case 'gas station':
         return Icons.local_gas_station;
       case 'emi':
+      case 'loan':
         return Icons.credit_card;
       case 'health':
+      case 'medical':
+      case 'medicine':
+      case 'pharmacy':
+      case 'doctor':
+      case 'hospital':
         return Icons.medical_services;
       case 'food':
-        return Icons.restaurant;
-
-      // Income categories
-      case 'salary':
-        return Icons.account_balance_wallet;
-      case 'business':
-        return Icons.business_center;
-      case 'bonus':
-        return Icons.redeem;
-      case 'gift':
-        return Icons.card_giftcard;
-
-      // Legacy mappings for backward compatibility
-      case 'restaurant':
+      case 'food/dining':
       case 'dining':
+      case 'restaurant':
+      case 'cafe':
+      case 'coffee':
         return Icons.restaurant;
-      case 'travel':
-      case 'transport':
-      case 'commute':
-        return Icons.directions_car;
-      case 'shopping':
-      case 'retail':
-      case 'store':
-        return Icons.shopping_bag;
-      case 'bills':
-      case 'utilities':
-      case 'water':
-      case 'gas':
-        return Icons.receipt;
-      case 'entertainment':
-      case 'movies':
-      case 'music':
-      case 'games':
-        return Icons.movie;
-      case 'medical':
-      case 'pharmacy':
-      case 'hospital':
-        return Icons.local_hospital;
+      case 'school fees':
       case 'education':
       case 'school':
+      case 'fees':
       case 'college':
       case 'courses':
         return Icons.school;
-      case 'income':
+      case 'maid':
+      case 'cleaning':
+      case 'servant':
+        return Icons.cleaning_services;
+      case 'repair':
+      case 'maintenance':
+      case 'repairs':
+      case 'build':
+        return Icons.build;
+      case 'shopping':
+      case 'mall':
+      case 'retail':
+      case 'store':
+      case 'shopping bag':
+        return Icons.shopping_bag;
+      case 'travel':
+      case 'trip':
+      case 'flight':
+      case 'train':
+      case 'directions car':
+        return Icons.directions_car;
+      case 'bank':
+      case 'sbi':
+      case 'bob':
+      case 'sbi bank':
+      case 'bob bank':
+      case 'hdfc':
+      case 'icici':
+        return Icons.account_balance;
+      case 'parking':
+        return Icons.local_parking;
+      case 'insurance':
+      case 'life insurance':
+        return Icons.security;
+      case 'donations':
+        return Icons.volunteer_activism;
+
+      // Income categories
+      case 'salary':
       case 'paycheck':
+      case 'income':
         return Icons.account_balance_wallet;
+      case 'business':
+      case 'profit':
       case 'freelance':
       case 'side hustle':
         return Icons.business_center;
+      case 'bonus':
+      case 'incentive':
+        return Icons.redeem;
+      case 'gift':
+      case 'gifts':
+        return Icons.card_giftcard;
+      case 'rent income':
+      case 'rental':
+        return Icons.real_estate_agent;
+      case 'interest':
+      case 'dividends':
+      case 'returns':
       case 'investments':
       case 'stocks':
       case 'mutual funds':
         return Icons.trending_up;
       case 'savings':
-      case 'bank':
         return Icons.savings;
-      case 'housing':
-      case 'mortgage':
-        return Icons.home;
-      case 'insurance':
-      case 'life insurance':
-        return Icons.security;
-      case 'gifts':
-      case 'donations':
-        return Icons.card_giftcard;
-      case 'personal':
-      case 'care':
-        return Icons.spa;
-      case 'sports':
-      case 'fitness':
-        return Icons.fitness_center;
-      case 'subscriptions':
-      case 'membership':
-        return Icons.subscriptions;
-      case 'supermarket':
-        return Icons.shopping_cart;
-      case 'coffee':
-      case 'cafe':
-        return Icons.coffee;
-      case 'fuel':
-      case 'gas station':
-        return Icons.local_gas_station;
-      case 'parking':
-        return Icons.local_parking;
-      case 'maintenance':
-      case 'repairs':
-        return Icons.build;
+
       default:
-        return Icons.category;
+        // Use a persistent pseudorandom icon based on name sum if no match
+        final charSum = name
+            .split('')
+            .fold<int>(0, (p, c) => p + c.codeUnits[0]);
+        final fallbackIcons = [
+          Icons.category,
+          Icons.stars,
+          Icons.account_balance,
+          Icons.wallet,
+          Icons.savings,
+          Icons.payments,
+          Icons.style,
+          Icons.label,
+        ];
+        return fallbackIcons[charSum % fallbackIcons.length];
     }
   }
 
   /// Get category color based on category name and type (income/expense)
+  /// Get category color based on category name and type (income/expense)
   static Color getCategoryColor(String categoryName, {bool isIncome = false}) {
-    if (isIncome) {
-      return accentColor;
+    final name = categoryName.toLowerCase().trim();
+
+    // Exact matches for common categories
+    if (name.contains('food') ||
+        name.contains('dining') ||
+        name.contains('groceries')) {
+      return const Color(0xFFFF7043);
     }
-    final name = categoryName.toLowerCase();
-    switch (name) {
-      case 'food':
-      case 'dining':
-      case 'groceries':
-        return const Color(0xFFFF7043);
-      case 'travel':
-      case 'transport':
-        return const Color(0xFF42A5F5);
-      case 'shopping':
-        return const Color(0xFFEC407A);
-      case 'bills':
-      case 'utilities':
-        return const Color(0xFFAB47BC);
-      case 'entertainment':
-        return const Color(0xFFFFCA28);
-      case 'health':
-      case 'medical':
-        return const Color(0xFFEF5350);
-      case 'education':
-        return const Color(0xFF5C6BC0);
-      case 'housing':
-      case 'rent':
-        return const Color(0xFF26A69A);
-      case 'insurance':
-        return const Color(0xFF78909C);
-      default:
-        return const Color(0xFF0A2540);
+    if (name.contains('travel') ||
+        name.contains('transport') ||
+        name.contains('petrol')) {
+      return const Color(0xFF42A5F5);
     }
+    if (name.contains('shopping') || name.contains('mall')) {
+      return const Color(0xFFEC407A);
+    }
+    if (name.contains('bills') ||
+        name.contains('electricity') ||
+        name.contains('mobile') ||
+        name.contains('wifi')) {
+      return const Color(0xFF7E57C2);
+    }
+    if (name.contains('health') ||
+        name.contains('medical') ||
+        name.contains('medicine')) {
+      return const Color(0xFFEF5350);
+    }
+    if (name.contains('education') ||
+        name.contains('school') ||
+        name.contains('fees')) {
+      return const Color(0xFF5C6BC0);
+    }
+    if (name.contains('housing') ||
+        name.contains('rent') ||
+        name.contains('emi')) {
+      return const Color(0xFF26A69A);
+    }
+    if (name.contains('salary') || name.contains('income')) {
+      return const Color(0xFF00C853);
+    }
+    if (name.contains('business') ||
+        name.contains('bonus') ||
+        name.contains('gift')) {
+      return const Color(0xFFFFCA28);
+    }
+    if (name.contains('bank') || name.contains('bob') || name.contains('sbi')) {
+      return const Color(0xFF455A64);
+    }
+
+    // Fallback: Generate a consistent unique color based on the name hash for unknown categories
+    final hashData = name.hashCode;
+    final h = (hashData.abs() % 360).toDouble();
+    return HSVColor.fromAHSV(1.0, h, 0.65, 0.85).toColor();
   }
 
   /// Format currency with symbol

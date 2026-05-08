@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:finflow/models/category.dart';
-import '../providers/db_provider.dart';
+import '../utils/database_helper.dart';
 import 'package:finflow/utils/utility.dart' as utility;
 import 'package:finflow/utils/app_theme.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -13,7 +13,7 @@ class CategoryScreen extends StatefulWidget {
 }
 
 class _CategoryScreenState extends State<CategoryScreen> {
-  final DBProvider _dbProvider = DBProvider.db;
+  final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   List<Category> _categories = [];
   bool _isLoading = true;
 
@@ -26,7 +26,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
   Future<void> _loadCategories() async {
     setState(() => _isLoading = true);
     try {
-      _categories = await _dbProvider.getAllCategories();
+      _categories = await _dbHelper.getAllCategoriesObjects();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -89,7 +89,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
     if (!context.mounted) return false;
 
     if (confirmed == true) {
-      final result = await _dbProvider.deleteCategory(category.id!);
+      final result = await _dbHelper.deleteCategory(category.id!);
       final success = result > 0;
       if (!mounted) return false;
       if (success) {
@@ -117,9 +117,14 @@ class _CategoryScreenState extends State<CategoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Manage Categories'),
+        title: Text(
+          'Manage Categories',
+          style: GoogleFonts.plusJakartaSans(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         backgroundColor: AppTheme.primaryColor,
-        foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: _isLoading
@@ -164,9 +169,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
 
   Widget _buildCategoryTile(Category category) {
     final color = utility.stringToColor(category.color);
-    // Look up icon by category name from categoryIcons map, fallback to Icons.category
-    final iconData =
-        utility.categoryIcons[category.name.toLowerCase()] ?? Icons.category;
+    // Look up icon by category name from AppTheme
+    final iconData = AppTheme.getCategoryIcon(category.name);
 
     return ListTile(
       dense: true,
@@ -200,7 +204,8 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
   final _iconController = TextEditingController();
   final _colorController = TextEditingController();
   String _selectedType = 'expense';
-  final DBProvider _dbProvider = DBProvider.db;
+  bool _isSaving = false;
+  final DatabaseHelper _dbHelper = DatabaseHelper.instance;
 
   @override
   void initState() {
@@ -227,7 +232,9 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
   }
 
   Future<void> _saveCategory() async {
+    if (_isSaving) return;
     if (_formKey.currentState!.validate()) {
+      setState(() => _isSaving = true);
       final category = Category(
         id: widget.category?.id,
         name: _nameController.text.trim(),
@@ -239,10 +246,10 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
       try {
         if (widget.category == null) {
           // Add new category
-          await _dbProvider.newCategory(category);
+          await _dbHelper.newCategory(category);
         } else {
           // Update existing category
-          await _dbProvider.updateCategory(category);
+          await _dbHelper.updateCategoryObject(category);
         }
         if (!mounted) return;
 
@@ -252,6 +259,8 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error saving category: $e')));
+      } finally {
+        if (mounted) setState(() => _isSaving = false);
       }
     }
   }
@@ -265,7 +274,19 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(icon: const Icon(Icons.save), onPressed: _saveCategory),
+          IconButton(
+            icon: _isSaving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.save),
+            onPressed: _isSaving ? null : _saveCategory,
+          ),
         ],
       ),
       body: Padding(
@@ -322,14 +343,11 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
   }
 
   Widget _buildIconSelector() {
-    final colorHex = _colorController.text.trim();
-    Color iconColor = utility.stringToColor(colorHex);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Select Icon',
+          'Preview',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -337,141 +355,53 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
         ),
         const SizedBox(height: 12),
         Container(
-          height: 350,
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: GridView.builder(
-            padding: const EdgeInsets.all(12),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 5,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: utility.categoryIcons.length,
-            itemBuilder: (context, index) {
-              final iconEntry = utility.categoryIcons.entries.elementAt(index);
-              final isSelected = _iconController.text == iconEntry.key;
-
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _iconController.text = iconEntry.key;
-                  });
-                },
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? iconColor.withValues(alpha: 0.15)
-                        : Colors.grey.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(12),
-                    border: isSelected
-                        ? Border.all(color: iconColor, width: 2.5)
-                        : Border.all(
-                            color: Colors.grey.withValues(alpha: 0.3),
-                            width: 1,
-                          ),
-                    boxShadow: isSelected
-                        ? [
-                            BoxShadow(
-                              color: iconColor.withValues(alpha: 0.2),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ]
-                        : [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 2,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        iconEntry.value,
-                        size: 32,
-                        color: isSelected ? iconColor : Colors.grey.shade600,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        iconEntry.key,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          color: isSelected ? iconColor : Colors.grey.shade500,
-                          fontWeight: isSelected
-                              ? FontWeight.w600
-                              : FontWeight.normal,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: iconColor.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
+            color: AppTheme.getCategoryColor(
+              _nameController.text.trim(),
+              isIncome: _selectedType == 'income',
+            ).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: iconColor.withValues(alpha: 0.4),
-              width: 1.5,
+              color: AppTheme.getCategoryColor(
+                _nameController.text.trim(),
+                isIncome: _selectedType == 'income',
+              ).withValues(alpha: 0.3),
             ),
           ),
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(8),
+                  color: AppTheme.getCategoryColor(
+                    _nameController.text.trim(),
+                    isIncome: _selectedType == 'income',
+                  ).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  utility.getIconData(_iconController.text.trim()) ??
-                      Icons.category,
-                  color: iconColor,
+                  AppTheme.getCategoryIcon(_nameController.text.trim()),
+                  color: AppTheme.getCategoryColor(
+                    _nameController.text.trim(),
+                    isIncome: _selectedType == 'income',
+                  ),
                   size: 28,
                 ),
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Selected Icon',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _iconController.text.isEmpty
-                          ? 'None selected'
-                          : _iconController.text.toUpperCase(),
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: iconColor,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  _nameController.text.isEmpty
+                      ? 'Category Name'
+                      : _nameController.text.trim(),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-              if (_iconController.text.isNotEmpty)
-                Icon(Icons.check_circle, color: iconColor, size: 20),
             ],
           ),
         ),

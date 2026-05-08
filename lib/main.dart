@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:finflow/screens/welcome_screen.dart';
 import 'package:finflow/screens/main_wrapper.dart';
@@ -10,10 +11,15 @@ import 'package:finflow/providers/transaction_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
 import 'package:finflow/providers/user_provider.dart';
+import 'package:finflow/providers/settings_provider.dart';
+import 'package:finflow/providers/navigation_provider.dart';
+import 'package:finflow/providers/category_provider.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:finflow/utils/debug_logger.dart';
 import 'package:finflow/firebase_options.dart';
 import 'package:finflow/services/test_user_service.dart';
+import 'package:finflow/services/notification_service.dart';
+import 'package:upgrader/upgrader.dart';
 
 /// Global flag to track Firebase initialization status
 bool _firebaseInitialized = false;
@@ -45,7 +51,13 @@ void main() {
   });
 
   // Initialize timezone in background (non-blocking microtask)
-  Future.microtask(() => tz.initializeTimeZones());
+  Future.microtask(() {
+    try {
+      tz.initializeTimeZones();
+    } catch (e) {
+      logError('Timezone initialization failed', error: e);
+    }
+  });
 
   // Ensure test user exists - runs completely in background
   Future.microtask(() async {
@@ -53,7 +65,15 @@ void main() {
       final testUserService = TestUserService();
       await testUserService.ensureTestUserExists();
     } catch (e) {
-      logError('Failed to create test user', error: e);
+      logError('Test user initialization failed', error: e);
+    }
+
+    try {
+      // Initialize Notification Service
+      await NotificationService().init();
+      logDebug('Notification Service initialized');
+    } catch (e) {
+      logError('Notification Service initialization failed', error: e);
     }
   });
 }
@@ -77,6 +97,13 @@ Future<void> _initializeFirebaseWithTimeout() async {
       final firebaseApp = Firebase.app();
       // Access properties to validate app is fully initialized
       firebaseApp.options; // This will throw if app is not properly initialized
+
+      // ✅ Enable Firestore Offline Persistence (OFFLINE FIRST)
+      // Using modern non-deprecated API: persistence is configured via Settings
+      FirebaseFirestore.instance.settings = const Settings(
+        persistenceEnabled: true,
+        cacheSizeBytes: -1,
+      );
 
       _firebaseInitialized = true;
       logDebug(
@@ -120,10 +147,17 @@ class FinFlowApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => TransactionProvider()),
         ChangeNotifierProvider(create: (_) => CurrencyProvider()),
+        ChangeNotifierProxyProvider<CurrencyProvider, TransactionProvider>(
+          create: (_) => TransactionProvider(),
+          update: (_, currencyProvider, transactionProvider) =>
+              transactionProvider!..updateCurrencyProvider(currencyProvider),
+        ),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider(create: (_) => NavigationProvider()),
+        ChangeNotifierProvider(create: (_) => CategoryProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
@@ -132,7 +166,13 @@ class FinFlowApp extends StatelessWidget {
             theme: AppTheme.theme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
-            home: const AuthWrapper(),
+            home: UpgradeAlert(
+              upgrader: Upgrader(
+                debugDisplayAlways: false,
+                durationUntilAlertAgain: Duration(hours: 12),
+              ),
+              child: const AuthWrapper(),
+            ),
             routes: {
               '/home': (context) => const MainWrapper(),
               '/welcome': (context) => const WelcomeScreen(),
@@ -224,12 +264,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
           // Initialize transaction provider for authenticated user
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            final transactionProvider = Provider.of<TransactionProvider>(
-              context,
-              listen: false,
-            );
-            if (!transactionProvider.isInitialized) {
-              transactionProvider.initializeTransactions();
+            try {
+              final transactionProvider = Provider.of<TransactionProvider>(
+                context,
+                listen: false,
+              );
+              if (!transactionProvider.isInitialized) {
+                transactionProvider.initializeTransactions();
+              }
+            } catch (e) {
+              logError('Failed to initialize transaction provider', error: e);
             }
           });
 

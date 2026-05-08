@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:finflow/models/category.dart';
-import 'package:finflow/providers/db_provider.dart';
-import 'package:finflow/utils/utility.dart' as utility;
+import 'package:finflow/providers/category_provider.dart';
+import 'package:provider/provider.dart';
+
 import 'package:finflow/utils/app_theme.dart';
+import 'package:finflow/screens/category_detail_screen.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:finflow/utils/utility.dart';
 
 class ManageCategoriesScreen extends StatefulWidget {
   const ManageCategoriesScreen({super.key});
@@ -12,36 +16,14 @@ class ManageCategoriesScreen extends StatefulWidget {
 }
 
 class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
-  final DBProvider _dbProvider = DBProvider.db;
-  List<Category> _categories = [];
-  bool _isLoading = true;
-
   @override
   void initState() {
     super.initState();
-    _loadCategories();
-  }
-
-  Future<void> _loadCategories() async {
-    setState(() => _isLoading = true);
-    try {
-      _categories = await _dbProvider.getAllCategories();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error loading categories: $e')));
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
   }
 
   Future<void> _addCategory() async {
     final TextEditingController nameController = TextEditingController();
     String selectedType = 'expense';
-    String selectedIcon = 'category';
 
     final result = await showDialog<Map<String, dynamic>?>(
       context: context,
@@ -59,6 +41,9 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                     hintText: 'Enter category name',
                   ),
                   autofocus: true,
+                  onChanged: (val) {
+                    setState(() {});
+                  },
                 ),
                 const SizedBox(height: 16),
                 const Text(
@@ -83,45 +68,51 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Select Icon:',
+                  'Preview:',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                SizedBox(
-                  height: 200,
-                  child: GridView.builder(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 6,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppTheme.getCategoryColor(
+                            nameController.text.trim(),
+                            isIncome: selectedType == 'income',
+                          ).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                    itemCount: utility.selectableIcons.length,
-                    itemBuilder: (context, index) {
-                      final iconEntry = utility.selectableIcons[index];
-                      final isSelected = iconEntry.key == selectedIcon;
-                      return InkWell(
-                        onTap: () {
-                          setState(() => selectedIcon = iconEntry.key);
-                        },
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? Theme.of(
-                                    context,
-                                  ).primaryColor.withValues(alpha: 0.2)
-                                : Colors.grey[200],
-                            borderRadius: BorderRadius.circular(8),
-                            border: isSelected
-                                ? Border.all(
-                                    color: Theme.of(context).primaryColor,
-                                  )
-                                : null,
+                        child: Icon(
+                          AppTheme.getCategoryIcon(nameController.text.trim()),
+                          color: AppTheme.getCategoryColor(
+                            nameController.text.trim(),
+                            isIncome: selectedType == 'income',
                           ),
-                          child: Icon(iconEntry.value, size: 24),
+                          size: 24,
                         ),
-                      );
-                    },
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          nameController.text.isEmpty
+                              ? 'Category Name'
+                              : nameController.text.trim(),
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -138,7 +129,7 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                   Navigator.pop(context, {
                     'name': nameController.text.trim(),
                     'type': selectedType,
-                    'icon': selectedIcon,
+                    'icon': 'category', // Auto-mapped dynamically
                   });
                 }
               },
@@ -148,6 +139,8 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
         ),
       ),
     );
+
+    if (!mounted) return;
 
     if (result != null) {
       try {
@@ -159,13 +152,14 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
           budgetLimit: 0.0, // Default budget limit
         );
 
-        await _dbProvider.newCategory(newCategory);
+        final categoryProvider = context.read<CategoryProvider>();
+        await categoryProvider.addCategory(newCategory);
+        
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${newCategory.name} added successfully')),
         );
-        _loadCategories();
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(
@@ -179,26 +173,42 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Manage Categories'),
+        title: Text(
+          'Manage Categories',
+          style: GoogleFonts.plusJakartaSans(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         backgroundColor: AppTheme.primaryColor,
-        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _categories.isEmpty
-          ? const Center(
+      body: Consumer<CategoryProvider>(
+        builder: (context, categoryProvider, child) {
+          if (categoryProvider.isLoading && !categoryProvider.isInitialized) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          
+          final categories = categoryProvider.categories;
+          
+          if (categories.isEmpty) {
+            return const Center(
               child: Text(
                 'No categories found. Tap + to add your first category.',
                 textAlign: TextAlign.center,
               ),
-            )
-          : ListView.builder(
-              itemCount: _categories.length,
-              itemBuilder: (context, index) {
-                final category = _categories[index];
-                return _buildCategoryTile(category);
-              },
-            ),
+            );
+          }
+          
+          return ListView.builder(
+            itemCount: categories.length,
+            itemBuilder: (context, index) {
+              final category = categories[index];
+              return _buildCategoryTile(category);
+            },
+          );
+        },
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addCategory,
         tooltip: 'Add Category',
@@ -216,7 +226,6 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
       text: category.budgetLimit.toString(),
     );
     String selectedType = category.type;
-    String selectedIcon = category.icon;
 
     final result = await showDialog<Map<String, dynamic>?>(
       context: context,
@@ -240,7 +249,7 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                   controller: budgetController,
                   decoration: const InputDecoration(
                     labelText: 'Monthly Budget Limit',
-                    hintText: 'Enter budget limit (0 for no limit)',
+                    hintText: 'Enter budget limit',
                   ),
                   keyboardType: TextInputType.number,
                 ),
@@ -267,45 +276,51 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Select Icon:',
+                  'Preview:',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                SizedBox(
-                  height: 200,
-                  child: GridView.builder(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 6,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppTheme.getCategoryColor(
+                            nameController.text.trim(),
+                            isIncome: selectedType == 'income',
+                          ).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                    itemCount: utility.selectableIcons.length,
-                    itemBuilder: (context, index) {
-                      final iconEntry = utility.selectableIcons[index];
-                      final isSelected = iconEntry.key == selectedIcon;
-                      return InkWell(
-                        onTap: () {
-                          setState(() => selectedIcon = iconEntry.key);
-                        },
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? Theme.of(
-                                    context,
-                                  ).primaryColor.withValues(alpha: 0.2)
-                                : Colors.grey[200],
-                            borderRadius: BorderRadius.circular(8),
-                            border: isSelected
-                                ? Border.all(
-                                    color: Theme.of(context).primaryColor,
-                                  )
-                                : null,
+                        child: Icon(
+                          AppTheme.getCategoryIcon(nameController.text.trim()),
+                          color: AppTheme.getCategoryColor(
+                            nameController.text.trim(),
+                            isIncome: selectedType == 'income',
                           ),
-                          child: Icon(iconEntry.value, size: 24),
+                          size: 24,
                         ),
-                      );
-                    },
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          nameController.text.isEmpty
+                              ? 'Category Name'
+                              : nameController.text.trim(),
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -325,7 +340,7 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
                     'name': nameController.text.trim(),
                     'budgetLimit': budgetLimit,
                     'type': selectedType,
-                    'icon': selectedIcon,
+                    'icon': 'category', // Auto-mapped using Magic visual 
                   });
                 }
               },
@@ -335,6 +350,8 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
         ),
       ),
     );
+
+    if (!mounted) return;
 
     if (result != null) {
       try {
@@ -347,7 +364,9 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
           budgetLimit: result['budgetLimit']!,
         );
 
-        await _dbProvider.updateCategory(updatedCategory);
+        final categoryProvider = context.read<CategoryProvider>();
+        await categoryProvider.updateCategory(updatedCategory);
+        
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -355,7 +374,6 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
             content: Text('${updatedCategory.name} updated successfully'),
           ),
         );
-        _loadCategories();
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(
@@ -366,19 +384,42 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
   }
 
   Widget _buildCategoryTile(Category category) {
-    final color = utility.stringToColor(category.color);
-    final iconData = utility.getIconData(category.icon) ?? Icons.category;
+    // Force all categories to use the AppTheme Magic Visual system,
+    // so it perfectly matches the Add Transaction screen.
+    final color = AppTheme.getCategoryColor(
+      category.name,
+      isIncome: category.type.toLowerCase() == 'income',
+    );
+
+    final iconData = AppTheme.getCategoryIcon(category.name);
 
     return ListTile(
       dense: true,
-      leading: CircleAvatar(
-        backgroundColor: color.withValues(alpha: 0.2),
-        child: Icon(iconData, color: color),
+      visualDensity: VisualDensity.compact,
+      leading: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(iconData, color: color, size: 24),
       ),
-      title: Text(category.name),
+      title: Text(category.name, style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
       subtitle: Text(
         "${category.type[0].toUpperCase()}${category.type.substring(1)} Category",
+        style: GoogleFonts.plusJakartaSans(fontSize: 11),
       ),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CategoryDetailScreen(
+              categoryName: category.name,
+              isIncome: category.type.toLowerCase() == 'income',
+            ),
+          ),
+        );
+      },
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -389,10 +430,43 @@ class _ManageCategoriesScreenState extends State<ManageCategoriesScreen> {
           IconButton(
             icon: const Icon(Icons.delete),
             onPressed: () async {
-              await _dbProvider.deleteCategory(category.id!);
-              _loadCategories();
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Delete Category'),
+                  content: Text('Are you sure you want to delete "${category.name}"?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirmed == true) {
+                if (!mounted) return;
+                try {
+                  final categoryProvider = context.read<CategoryProvider>();
+                  await categoryProvider.deleteCategory(category.id.toString());
+                  
+                  if (mounted) {
+                    showSnackBar(context, 'Category "${category.name}" deleted');
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    showErrorSnackBar(context, 'Failed to delete category: $e');
+                  }
+                }
+              }
             },
           ),
+          const Icon(Icons.chevron_right, color: Colors.grey, size: 16),
+          const SizedBox(width: 8),
         ],
       ),
     );

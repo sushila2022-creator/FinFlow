@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -22,34 +23,81 @@ class UserProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isInitialized => _isInitialized;
 
+  /// PREMIUM FOR ALL USERS - EVERYONE HAS FULL ACCESS
+  bool get isPremiumUser => true;
+
+  /// Testing mode - bypasses all premium locks when true
+  /// Set this to true for development/testing environments
+  static const bool isTestingMode = false;
+
+  // Firestore stream subscription
+  StreamSubscription<DocumentSnapshot>? _userSubscription;
+  StreamSubscription<User?>? _authStateSubscription;
+
   /// Initialize user provider
   /// Loads user data asynchronously without blocking UI
   UserProvider() {
-    // Use Future.microtask to defer loading until after current event loop
-    // This ensures the UI renders immediately without waiting for auth check
-    Future.microtask(() => _initializeUser());
+    // Listen for auth state changes to re-initialize listener
+    _authStateSubscription = _auth.authStateChanges().listen((user) {
+      if (user != null) {
+        _startUserListener(user);
+      } else {
+        _cleanup();
+      }
+    });
   }
 
-  // Initialize user asynchronously (non-blocking)
-  Future<void> _initializeUser() async {
+  void _cleanup() {
+    _userSubscription?.cancel();
+    _userSubscription = null;
+    _currentUser = null;
+    _isInitialized = false;
+    notifyListeners();
+  }
+
+  void _startUserListener(User firebaseUser) {
+    _userSubscription?.cancel();
     _isLoading = true;
     notifyListeners();
 
-    try {
-      // Check if Firebase Auth is available
-      User? firebaseUser = _auth.currentUser;
-      if (firebaseUser != null) {
-        await _loadUserFromFirestore(firebaseUser);
-      }
-    } catch (e) {
-      // Firebase might not be initialized yet or user not logged in
-      // This is expected behavior - don't log as error
-      logDebug('Initial user check', tag: 'UserProvider');
-    } finally {
-      _isLoading = false;
-      _isInitialized = true;
-      notifyListeners();
-    }
+    _userSubscription = _firestore
+        .collection('users')
+        .doc(firebaseUser.uid)
+        .snapshots()
+        .listen(
+          (doc) async {
+            if (doc.exists) {
+              _currentUser = UserModel.fromSnapshot(doc);
+            } else {
+              // Create new user document if it doesn't exist
+              final email = firebaseUser.email ?? '';
+              final fallbackName = email.isNotEmpty
+                  ? email.split('@')[0]
+                  : 'User';
+
+              _currentUser = UserModel(
+                uid: firebaseUser.uid,
+                name: firebaseUser.displayName ?? fallbackName,
+                email: email,
+                isPremium: false,
+              );
+
+              await _firestore
+                  .collection('users')
+                  .doc(firebaseUser.uid)
+                  .set(_currentUser!.toMap());
+            }
+
+            _isLoading = false;
+            _isInitialized = true;
+            notifyListeners();
+          },
+          onError: (e) {
+            logError('User listener failed', tag: 'UserProvider', error: e);
+            _isLoading = false;
+            notifyListeners();
+          },
+        );
   }
 
   Future<void> checkAuthStatus() async {
@@ -80,10 +128,13 @@ class UserProvider with ChangeNotifier {
         _currentUser = UserModel.fromSnapshot(userDoc);
       } else {
         // Create new user document if it doesn't exist
+        final email = firebaseUser.email ?? '';
+        final fallbackName = email.isNotEmpty ? email.split('@')[0] : 'User';
+
         _currentUser = UserModel(
           uid: firebaseUser.uid,
-          name: firebaseUser.displayName ?? firebaseUser.email!.split('@')[0],
-          email: firebaseUser.email ?? '',
+          name: firebaseUser.displayName ?? fallbackName,
+          email: email,
           isPremium: false,
         );
 
@@ -99,10 +150,13 @@ class UserProvider with ChangeNotifier {
         tag: 'UserProvider',
         error: e,
       );
+      final email = firebaseUser.email ?? '';
+      final fallbackName = email.isNotEmpty ? email.split('@')[0] : 'User';
+
       _currentUser = UserModel(
         uid: firebaseUser.uid,
-        name: firebaseUser.displayName ?? firebaseUser.email!.split('@')[0],
-        email: firebaseUser.email ?? '',
+        name: firebaseUser.displayName ?? fallbackName,
+        email: email,
         isPremium: false,
       );
     }
@@ -142,4 +196,11 @@ class UserProvider with ChangeNotifier {
   }
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
+
+  @override
+  void dispose() {
+    _userSubscription?.cancel();
+    _authStateSubscription?.cancel();
+    super.dispose();
+  }
 }

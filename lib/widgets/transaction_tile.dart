@@ -46,26 +46,15 @@ class TransactionTile extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-          trailing: RichText(
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: currencyProvider.currentCurrencySymbol,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: transaction.isIncome ? Colors.green : Colors.red,
-                  ),
-                ),
-                TextSpan(
-                  text: transaction.amount.abs().toStringAsFixed(2),
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: transaction.isIncome ? Colors.green : Colors.red,
-                  ),
-                ),
-              ],
+          trailing: Text(
+            currencyProvider.formatConvertedAmount(
+              transaction.amount.abs(),
+              transaction.currencyCode,
+            ),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: transaction.isIncome ? Colors.green : Colors.red,
             ),
           ),
         );

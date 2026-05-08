@@ -42,6 +42,12 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- AdMob App ID - Use Google Test App ID for development -->
+        <!-- Replace with production App ID before release -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
         
         <!-- FileProvider for sharing files securely (required for backup functionality) -->
         <provider

@@ -3,6 +3,17 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 
 class NotificationService {
+  // Singleton instance
+  static final NotificationService _instance = NotificationService._internal();
+
+  // Factory constructor to return the same instance
+  factory NotificationService() {
+    return _instance;
+  }
+
+  // Internal named constructor
+  NotificationService._internal();
+
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
@@ -37,6 +48,15 @@ class NotificationService {
           AndroidFlutterLocalNotificationsPlugin
         >()
         ?.createNotificationChannel(channel);
+  }
+
+  Future<bool> requestPermission() async {
+    final status = await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
+    return status ?? false;
   }
 
   Future<void> showNotification(String title, String body) async {

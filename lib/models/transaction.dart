@@ -160,28 +160,46 @@ class Transaction {
 
   // fromMap for local database compatibility
   factory Transaction.fromMap(Map<String, dynamic> map) {
+    DateTime parseDate(dynamic dateValue) {
+      if (dateValue == null) return DateTime.now();
+      try {
+        if (dateValue is String) return DateTime.tryParse(dateValue) ?? DateTime.now();
+        if (dateValue is int) return DateTime.fromMillisecondsSinceEpoch(dateValue);
+        return DateTime.now();
+      } catch (e) {
+        return DateTime.now();
+      }
+    }
+
+    double parseDouble(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
+    }
+
     return Transaction(
-      id: map['id'] ?? '',
-      userId: map['userId'] ?? '', // Added for consistency
-      title: map['title'] ?? map['description'] ?? '',
-      description: map['description'] ?? '',
-      amount: (map['amount'] ?? 0.0).toDouble(),
-      currencyCode: map['currencyCode'] ?? 'INR',
-      date: map['date'] != null ? DateTime.parse(map['date']) : DateTime.now(),
-      category: map['category'] ?? map['categoryName'] ?? 'Misc',
-      categoryId: map['categoryId'] ?? 0,
+      id: map['id']?.toString() ?? '',
+      userId: map['userId']?.toString() ?? '',
+      title: map['title']?.toString() ?? map['description']?.toString() ?? '',
+      description: map['description']?.toString() ?? '',
+      amount: parseDouble(map['amount']),
+      currencyCode: map['currencyCode']?.toString() ?? 'INR',
+      date: parseDate(map['date']),
+      category: (map['category'] ?? map['categoryName'] ?? 'Misc').toString(),
+      categoryId: int.tryParse(map['categoryId']?.toString() ?? '0') ?? 0,
       isIncome:
           map['isIncome'] == 1 ||
           map['isIncome'] == true ||
-          (map['type'] ?? '') == 'income',
-      accountId: map['accountId'] ?? 1,
-      notes: map['notes'],
-      isRecurring: map['isRecurring'] == 1,
-      recurrenceFrequency: map['recurrenceFrequency'],
+          (map['type']?.toString().toLowerCase() ?? '') == 'income',
+      accountId: int.tryParse(map['accountId']?.toString() ?? '1') ?? 1,
+      notes: map['notes']?.toString(),
+      isRecurring: map['isRecurring'] == 1 || map['isRecurring'] == true,
+      recurrenceFrequency: map['recurrenceFrequency']?.toString(),
       recurrenceEndDate: map['recurrenceEndDate'] != null
-          ? DateTime.parse(map['recurrenceEndDate'])
+          ? DateTime.tryParse(map['recurrenceEndDate'].toString())
           : null,
-      attachmentPath: map['attachmentPath'],
+      attachmentPath: map['attachmentPath']?.toString(),
     );
   }
 

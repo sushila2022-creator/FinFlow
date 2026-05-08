@@ -2,6 +2,7 @@ import 'package:finflow/providers/transaction_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
 import 'package:finflow/providers/user_provider.dart';
+import 'package:finflow/providers/settings_provider.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -17,17 +18,16 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 import 'dart:io';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:finflow/services/notification_service.dart';
-import 'package:finflow/services/sms_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:finflow/screens/premium_screen.dart';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' hide Column, Row;
 import 'package:open_file/open_file.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -37,61 +37,94 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class SettingsScreenState extends State<SettingsScreen> {
-  bool _isAppLockEnabled = false;
-  bool _dailyReminderEnabled = false;
-  bool _isSmsScanEnabled = false;
   final FlutterSecureStorage _secureStorage = FlutterSecureStorage();
   final LocalAuthService _localAuthService = LocalAuthService();
-  final NotificationService _notificationService = NotificationService();
   final TextEditingController _pinController = TextEditingController();
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
   bool _isBackupInProgress = false;
   bool _isRestoreInProgress = false;
   final GoogleAuthService _googleAuthService = GoogleAuthService();
+  PackageInfo? _packageInfo;
 
   @override
   void initState() {
     super.initState();
-    _loadAppLockState();
-    _loadNotificationSettings();
-    _loadSmsScanSettings();
+    _loadPackageInfo();
   }
 
-  Future<void> _loadAppLockState() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      _isAppLockEnabled = prefs.getBool('app_lock_enabled') ?? false;
-    });
-  }
-
-  Future<void> _loadNotificationSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool('daily_reminder_enabled') ?? false;
-    if (!mounted) return;
-    setState(() {
-      _dailyReminderEnabled = enabled;
-    });
-
-    if (enabled) {
-      await _notificationService.scheduleDailyReminder(9, 0);
-    } else {
-      await _notificationService.cancelDailyReminder();
+  Future<void> _loadPackageInfo() async {
+    _packageInfo = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() {});
     }
   }
 
-  Future<void> _loadSmsScanSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool('smart_sms_scan_enabled') ?? false;
-    if (!mounted) return;
-    setState(() {
-      _isSmsScanEnabled = enabled;
-    });
+  // Methods removed: _loadAppLockState, _loadNotificationSettings, _loadSmsScanSettings
+  // These are now handled by SettingsProvider
 
-    if (enabled) {
-      SmsService().startScanning();
-    } else {
-      SmsService().stopScanning();
+  Future<void> _editProfile(dynamic user) async {
+    if (user == null) return;
+
+    final TextEditingController nameController = TextEditingController(
+      text: user.name,
+    );
+
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Edit Profile'),
+          content: TextField(
+            controller: nameController,
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              hintText: 'Enter your new name',
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context, nameController.text.trim());
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (newName != null && newName.isNotEmpty && newName != user.name) {
+      if (!mounted) return;
+      try {
+        final authUser = FirebaseAuth.instance.currentUser;
+        if (authUser != null) {
+          await authUser.updateDisplayName(newName);
+        }
+
+        if (!mounted) return;
+        final updatedUser = user.copyWith(name: newName);
+        await Provider.of<UserProvider>(
+          context,
+          listen: false,
+        ).updateUser(updatedUser);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Profile updated successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to update profile: $e')),
+          );
+        }
+      }
     }
   }
 
@@ -462,32 +495,18 @@ class SettingsScreenState extends State<SettingsScreen> {
                                         : AppTheme.textSecondaryLight,
                                   ),
                                 ),
-                                if (user?.isPremium == true)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 6),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(
-                                          0xFFFFD700,
-                                        ).withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        '⭐ Premium Member',
-                                        style: GoogleFonts.plusJakartaSans(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: const Color(0xFFB8860B),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                               ],
                             ),
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.edit,
+                              color: isDarkMode
+                                  ? AppTheme.textPrimaryDark
+                                  : AppTheme.primaryColor,
+                            ),
+                            tooltip: 'Edit Profile',
+                            onPressed: () => _editProfile(user),
                           ),
                         ],
                       ),
@@ -558,39 +577,37 @@ class SettingsScreenState extends State<SettingsScreen> {
                         _showSmsScanInfoDialog();
                       }
                     },
-                    'trailing':
-                        Provider.of<UserProvider>(
-                              context,
-                            ).currentUser?.isPremium ==
-                            true
-                        ? Switch(
-                            value: _isSmsScanEnabled,
-                            activeThumbColor: const Color(0xFF00C853),
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                            onChanged: (value) async {
-                              final prefs =
-                                  await SharedPreferences.getInstance();
-                              await prefs.setBool(
-                                'smart_sms_scan_enabled',
-                                value,
+                    'trailing': Consumer<SettingsProvider>(
+                      builder: (context, settings, _) => Switch(
+                        value: settings.isSmsScanEnabled,
+                        activeThumbColor: const Color(0xFF00C853),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onChanged: (value) async {
+                          if (value) {
+                            final success = await settings.setSmsScanEnabled(
+                              true,
+                            );
+                            if (!success && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: const Text(
+                                    'SMS permission is required for this feature',
+                                  ),
+                                  backgroundColor: AppTheme.expenseColor,
+                                  action: SnackBarAction(
+                                    label: 'Settings',
+                                    textColor: Colors.white,
+                                    onPressed: () => openAppSettings(),
+                                  ),
+                                ),
                               );
-                              setState(() {
-                                _isSmsScanEnabled = value;
-                              });
-
-                              if (value) {
-                                SmsService().startScanning();
-                              } else {
-                                SmsService().stopScanning();
-                              }
-                            },
-                          )
-                        : Icon(
-                            Icons.lock,
-                            color: const Color(0xFFFFD700),
-                            size: 24,
-                          ),
+                            }
+                          } else {
+                            await settings.setSmsScanEnabled(false);
+                          }
+                        },
+                      ),
+                    ),
                   },
                   {
                     'title':
@@ -623,7 +640,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                     context,
                     listen: false,
                   );
-                  transactionProvider.exportTransactionsCsv(context);
+                  transactionProvider.exportTransactionsExcel(context);
                 },
                 'iconColor': const Color(0xFF00C853),
               },
@@ -674,34 +691,15 @@ class SettingsScreenState extends State<SettingsScreen> {
               {
                 'icon': Icons.lock,
                 'title': 'Enable App Lock',
-                'onTap': () async {
-                  if (_isAppLockEnabled) {
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.setBool('app_lock_enabled', false);
-                    await _secureStorage.write(key: 'pin', value: '');
-                    setState(() {
-                      _isAppLockEnabled = false;
-                    });
-                  } else {
-                    _showBiometricSetupDialog();
-                  }
-                },
-                'trailing': Switch(
-                  value: _isAppLockEnabled,
-                  activeThumbColor: const Color(0xFF00C853),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (value) async {
-                    if (value) {
-                      _showBiometricSetupDialog();
-                    } else {
-                      final prefs = await SharedPreferences.getInstance();
-                      await prefs.setBool('app_lock_enabled', false);
-                      await _secureStorage.write(key: 'pin', value: '');
-                      setState(() {
-                        _isAppLockEnabled = false;
-                      });
-                    }
-                  },
+                'onTap': () => _toggleAppLock(
+                  context.read<SettingsProvider>().isAppLockEnabled,
+                ),
+                'trailing': Consumer<SettingsProvider>(
+                  builder: (context, settings, _) => Switch(
+                    value: settings.isAppLockEnabled,
+                    activeThumbColor: const Color(0xFF00C853),
+                    onChanged: (value) => _toggleAppLock(!value),
+                  ),
                 ),
               },
             ], isDarkMode),
@@ -711,43 +709,20 @@ class SettingsScreenState extends State<SettingsScreen> {
               {
                 'icon': Icons.notifications,
                 'title': 'Daily Reminder',
-                'onTap': () async {
-                  final prefs = await SharedPreferences.getInstance();
-                  final newValue = !_dailyReminderEnabled;
-                  await prefs.setBool('daily_reminder_enabled', newValue);
-                  setState(() {
-                    _dailyReminderEnabled = newValue;
-                  });
-
-                  if (newValue) {
-                    await _notificationService.scheduleDailyReminder(9, 0);
-                  } else {
-                    await _notificationService.cancelDailyReminder();
-                  }
-                },
-                'trailing': Switch(
-                  value: _dailyReminderEnabled,
-                  activeThumbColor: const Color(0xFF00C853),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (value) async {
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.setBool('daily_reminder_enabled', value);
-                    setState(() {
-                      _dailyReminderEnabled = value;
-                    });
-
-                    if (value) {
-                      await _notificationService.scheduleDailyReminder(9, 0);
-                    } else {
-                      await _notificationService.cancelDailyReminder();
-                    }
-                  },
+                'onTap': () => _toggleDailyReminder(
+                  context.read<SettingsProvider>().dailyReminderEnabled,
+                ),
+                'trailing': Consumer<SettingsProvider>(
+                  builder: (context, settings, _) => Switch(
+                    value: settings.dailyReminderEnabled,
+                    activeThumbColor: const Color(0xFF00C853),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    onChanged: (value) => _toggleDailyReminder(!value),
+                  ),
                 ),
               },
             ], isDarkMode),
             const SizedBox(height: 16),
-            _buildSectionHeader('Google Account', isDarkMode),
-            _buildGoogleSection(isDarkMode),
             const SizedBox(height: 16),
             _buildSectionHeader('Support & About', isDarkMode),
             _buildSection([
@@ -885,7 +860,7 @@ class SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
             Center(
               child: Text(
-                'App Version 1.0.5',
+                'App Version ${_packageInfo?.version ?? '1.0.8'} (${_packageInfo?.buildNumber ?? '8'})',
                 style: GoogleFonts.plusJakartaSans(
                   color: isDarkMode
                       ? const Color(0xFFB0B0B0)
@@ -1032,15 +1007,36 @@ class SettingsScreenState extends State<SettingsScreen> {
     );
 
     if (shouldDelete != true) return;
+    if (!mounted) return;
 
     try {
+      // 1. Clear Firestore Transactions
+      final transactionProvider = Provider.of<TransactionProvider>(
+        context,
+        listen: false,
+      );
+      await transactionProvider.deleteAllTransactionsFromFirestore();
+
+      // 2. Clear Local SQLite Database
       await _databaseHelper.clearAllData();
+
+      // 3. Clear SharedPreferences (App Settings)
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      // 4. Clear Secure Storage (PIN/App Lock)
+      await _secureStorage.deleteAll();
+
+      // 5. Sign Out from Google and Firebase
+      await _googleAuthService.signOutFromGoogle();
+      await FirebaseAuth.instance.signOut();
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'App reset to factory settings. Default categories restored.',
+            'App reset to factory settings. All cloud and local data cleared.',
           ),
           backgroundColor: Colors.green,
         ),
@@ -1056,7 +1052,7 @@ class SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Backup failed: ${e.toString()}'),
+            content: Text('Reset failed: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -1067,13 +1063,13 @@ class SettingsScreenState extends State<SettingsScreen> {
   Future<void> _exportMonthlyExcel() async {
     try {
       final DateTime now = DateTime.now();
-      final DateTime firstDayOfMonth = DateTime(now.year, now.month, 1);
-      final DateTime lastDayOfMonth = DateTime(now.year, now.month + 1, 0);
-
-      final transactions = await _databaseHelper.getTransactionsByDateRange(
-        firstDayOfMonth,
-        lastDayOfMonth,
+      final transactionProvider = Provider.of<TransactionProvider>(
+        context,
+        listen: false,
       );
+      final transactions = transactionProvider.transactions
+          .where((t) => t.date.year == now.year && t.date.month == now.month)
+          .toList();
 
       if (transactions.isEmpty) {
         if (!mounted) return;
@@ -1102,20 +1098,14 @@ class SettingsScreenState extends State<SettingsScreen> {
         final transaction = transactions[i];
         final row = i + 2;
 
+        sheet.getRangeByName('A$row').setDateTime(transaction.date);
+        sheet.getRangeByName('B$row').setText(transaction.description);
+        sheet.getRangeByName('C$row').setNumber(transaction.amount);
         sheet
-            .getRangeByName('A$row')
-            .setDateTime(
-              DateTime.fromMillisecondsSinceEpoch(transaction['date'] as int),
-            );
-        sheet.getRangeByName('B$row').setText(transaction['note'] as String);
-        sheet
-            .getRangeByName('C$row')
-            .setNumber(transaction['amount'] as double);
-        sheet.getRangeByName('D$row').setText(transaction['type'] as String);
-        sheet
-            .getRangeByName('E$row')
-            .setText(transaction['category'] as String);
-        sheet.getRangeByName('F$row').setText('Unknown');
+            .getRangeByName('D$row')
+            .setText(transaction.isIncome ? 'Income' : 'Expense');
+        sheet.getRangeByName('E$row').setText(transaction.category);
+        sheet.getRangeByName('F$row').setText(transaction.notes ?? '');
       }
 
       // Format headers
@@ -1166,7 +1156,34 @@ class SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _toggleAppLock(bool currentValue) async {
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
+    if (currentValue) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('app_lock_enabled', false);
+      await _secureStorage.write(key: 'pin', value: '');
+      settings.setAppLockEnabled(false);
+    } else {
+      _showBiometricSetupDialog();
+    }
+  }
+
+  Future<void> _toggleDailyReminder(bool currentValue) async {
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
+    final success = await settings.setDailyReminderEnabled(!currentValue);
+
+    if (!success && !currentValue && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Notification permission is required for reminders'),
+          backgroundColor: AppTheme.expenseColor,
+        ),
+      );
+    }
+  }
+
   void _showBiometricSetupDialog() async {
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
     final isBiometricAvailable = await _localAuthService.isBiometricAvailable();
 
     if (!mounted) return;
@@ -1197,9 +1214,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                     final prefs = await SharedPreferences.getInstance();
                     await prefs.setBool('app_lock_enabled', true);
                     if (!mounted) return;
-                    setState(() {
-                      _isAppLockEnabled = true;
-                    });
+                    settings.setAppLockEnabled(true);
                     Future.microtask(() => navigator.pop());
                   }
                 },
@@ -1215,6 +1230,7 @@ class SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showSetPinDialog() {
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
     final navigator = Navigator.of(context);
 
     showDialog(
@@ -1246,9 +1262,7 @@ class SettingsScreenState extends State<SettingsScreen> {
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.setBool('app_lock_enabled', true);
                   if (!mounted) return;
-                  setState(() {
-                    _isAppLockEnabled = true;
-                  });
+                  settings.setAppLockEnabled(true);
                   Future.microtask(() => navigator.pop());
                 }
               },
@@ -1257,156 +1271,6 @@ class SettingsScreenState extends State<SettingsScreen> {
           ],
         );
       },
-    );
-  }
-
-  Widget _buildGoogleSection(bool isDarkMode) {
-    final currentUser = _googleAuthService.getCurrentGoogleUser();
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            ListTile(
-              dense: true,
-              visualDensity: VisualDensity.compact,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 4,
-              ),
-              splashColor: Colors.transparent,
-              leading: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4285F4),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: SvgPicture.asset(
-                  'assets/google_icon.svg',
-                  width: 20,
-                  height: 20,
-                  colorFilter: const ColorFilter.mode(
-                    Colors.white,
-                    BlendMode.srcIn,
-                  ),
-                ),
-              ),
-              title: Text(
-                currentUser != null
-                    ? 'Connected to Google'
-                    : 'Connect to Google',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: isDarkMode
-                      ? AppTheme.textPrimaryDark
-                      : AppTheme.textPrimaryLight,
-                ),
-              ),
-              subtitle: currentUser != null
-                  ? Text(
-                      currentUser.email,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 10,
-                        color: isDarkMode
-                            ? AppTheme.textSecondaryDark
-                            : AppTheme.textSecondaryLight,
-                      ),
-                    )
-                  : Text(
-                      'Sign in with Google to sync your data',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 10,
-                        color: isDarkMode
-                            ? AppTheme.textSecondaryDark
-                            : AppTheme.textSecondaryLight,
-                      ),
-                    ),
-              trailing: currentUser != null
-                  ? ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                      ),
-                      onPressed: () async {
-                        await _googleAuthService.signOutFromGoogle();
-                        if (!mounted) return;
-                        setState(() {});
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Disconnected from Google'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      },
-                      child: Text(
-                        'Disconnect',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    )
-                  : ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4285F4),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                      ),
-                      onPressed: () async {
-                        final user = await _googleAuthService.signInWithGoogle(
-                          context,
-                        );
-                        if (user != null && mounted) {
-                          setState(() {});
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Connected to Google as ${user.email}',
-                              ),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        }
-                      },
-                      child: Text(
-                        'Connect',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

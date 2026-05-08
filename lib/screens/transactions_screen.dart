@@ -10,7 +10,20 @@ import 'package:finflow/utils/app_theme.dart';
 import 'package:finflow/screens/add_transaction_screen.dart';
 
 class TransactionsScreen extends StatefulWidget {
-  const TransactionsScreen({super.key});
+  final DateTime? initialStartDate;
+  final DateTime? initialEndDate;
+  final String? title;
+  final String? categoryName;
+  final bool? initialIsIncome;
+
+  const TransactionsScreen({
+    super.key,
+    this.initialStartDate,
+    this.initialEndDate,
+    this.title,
+    this.categoryName,
+    this.initialIsIncome,
+  });
 
   @override
   State<TransactionsScreen> createState() => _TransactionsScreenState();
@@ -22,6 +35,22 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   bool _isSearchExpanded = false;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  DateTime? _startDate;
+  DateTime? _endDate;
+  String? _selectedCategory;
+  bool? _selectedIsIncome;
+
+  @override
+  void initState() {
+    super.initState();
+    _startDate = widget.initialStartDate;
+    _endDate = widget.initialEndDate;
+    _selectedCategory = widget.categoryName;
+    _selectedIsIncome = widget.initialIsIncome;
+    if (_selectedIsIncome != null) {
+      _filterType = _selectedIsIncome! ? 'Income' : 'Expense';
+    }
+  }
 
   @override
   void dispose() {
@@ -34,8 +63,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     setState(() {
       if (_filterType == type) {
         _filterType = 'All';
+        _selectedIsIncome = null;
       } else {
         _filterType = type;
+        _selectedIsIncome = type == 'Income';
       }
     });
   }
@@ -58,13 +89,27 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
 
   Widget _buildSearchField() {
     if (!_isSearchExpanded) {
-      return Text(
-        'Transactions',
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 20,
-          fontWeight: FontWeight.w800,
-          color: Colors.white,
-        ),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _getDynamicTitle(),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          ),
+          if (_startDate != null && _endDate != null)
+            Text(
+              _getDateRangeText(),
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: Colors.white70,
+              ),
+            ),
+        ],
       );
     }
 
@@ -145,36 +190,42 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       ),
       body: Consumer2<TransactionProvider, CurrencyProvider>(
         builder: (context, transactionProvider, currencyProvider, child) {
-          // Get and filter transactions
+          if (!transactionProvider.isInitialized &&
+              transactionProvider.isLoading) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Fetching transactions...'),
+                ],
+              ),
+            );
+          }
+
           final filteredTransactions = _getFilteredTransactions(
             transactionProvider.transactions,
           );
 
-          // Calculate monthly totals (independent of filter)
           final monthlyTotals = _calculateMonthlyTotals(
             transactionProvider.transactions,
-          );
-
-          // Group transactions by date
-          final groupedTransactions = _groupTransactionsByDate(
-            filteredTransactions,
+            currencyProvider,
           );
 
           return Column(
             children: [
-              // Header Summary (Interactive Toggle Buttons)
+              if (_startDate != null || _endDate != null || _selectedCategory != null || _selectedIsIncome != null)
+                _buildFilterChips(),
               _buildSummaryCards(
                 monthlyTotals,
                 currencyProvider.currentCurrencySymbol,
               ),
-              // Transactions List
               Expanded(
-                child: filteredTransactions.isEmpty
-                    ? _buildEmptyState()
-                    : _buildTransactionsList(
-                        groupedTransactions,
-                        currencyProvider,
-                      ),
+                child: _buildTransactionsList(
+                  filteredTransactions,
+                  currencyProvider,
+                ),
               ),
             ],
           );
@@ -183,7 +234,82 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     );
   }
 
-  // Helper methods for better code organization
+  String _getDynamicTitle() {
+    if (_selectedCategory != null) return '$_selectedCategory Transactions';
+    
+    String typeLabel = _filterType == 'All' ? 'Transactions' : _filterType;
+    
+    if (widget.title != null && widget.title!.contains(':')) {
+       final parts = widget.title!.split(':');
+       if (_filterType == 'All') return 'Transactions';
+       return '$typeLabel:${parts[1]}';
+    }
+    
+    return typeLabel;
+  }
+
+  Widget _buildFilterChips() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            if (_startDate != null && _endDate != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: Text(
+                    _getDateRangeText(),
+                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500),
+                  ),
+                  onSelected: (_) => setState(() { _startDate = null; _endDate = null; }),
+                  selected: true,
+                  selectedColor: AppTheme.primaryColor.withValues(alpha: 0.1),
+                  checkmarkColor: AppTheme.primaryColor,
+                  deleteIcon: const Icon(Icons.close, size: 14),
+                  onDeleted: () => setState(() { _startDate = null; _endDate = null; }),
+                ),
+              ),
+            if (_selectedCategory != null)
+              FilterChip(
+                label: Text(
+                  _selectedCategory!,
+                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500),
+                ),
+                onSelected: (_) => setState(() { _selectedCategory = null; }),
+                selected: true,
+                selectedColor: AppTheme.primaryColor.withValues(alpha: 0.1),
+                checkmarkColor: AppTheme.primaryColor,
+                deleteIcon: const Icon(Icons.close, size: 14),
+                onDeleted: () => setState(() { _selectedCategory = null; }),
+              ),
+            if (_selectedIsIncome != null)
+              FilterChip(
+                label: Text(
+                  _selectedIsIncome! ? 'Income Only' : 'Expense Only',
+                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500),
+                ),
+                onSelected: (_) => setState(() { _selectedIsIncome = null; _filterType = 'All'; }),
+                selected: true,
+                selectedColor: AppTheme.primaryColor.withValues(alpha: 0.1),
+                checkmarkColor: AppTheme.primaryColor,
+                deleteIcon: const Icon(Icons.close, size: 14),
+                onDeleted: () => setState(() { _selectedIsIncome = null; _filterType = 'All'; }),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getDateRangeText() {
+    if (_startDate == null || _endDate == null) return '';
+    final df = DateFormat('MMM dd');
+    if (_startDate == _endDate) return df.format(_startDate!);
+    return '${df.format(_startDate!)} - ${df.format(_endDate!)}';
+  }
+
   List<Transaction> _getFilteredTransactions(
     List<Transaction> allTransactions,
   ) {
@@ -191,14 +317,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       ..sort((a, b) => b.date.compareTo(a.date));
 
     return sortedTransactions.where((transaction) {
-      // Search Query Filter
       final matchesQuery =
           _searchQuery.isEmpty ||
           transaction.description.toLowerCase().contains(_searchQuery) ||
           transaction.categoryName.toLowerCase().contains(_searchQuery) ||
           transaction.title.toLowerCase().contains(_searchQuery);
 
-      // Type Filter (Income/Expense)
       bool matchesType = true;
       if (_filterType == 'Income') {
         matchesType = transaction.isIncome;
@@ -206,28 +330,73 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         matchesType = !transaction.isIncome;
       }
 
-      return matchesQuery && matchesType;
+      bool matchesDate = true;
+      if (_startDate != null && _endDate != null) {
+        final trDate = DateTime(
+          transaction.date.year,
+          transaction.date.month,
+          transaction.date.day,
+        );
+        final start = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+        final end = DateTime(_endDate!.year, _endDate!.month, _endDate!.day);
+        matchesDate = (trDate.isAtSameMomentAs(start) || trDate.isAfter(start)) &&
+            (trDate.isAtSameMomentAs(end) || trDate.isBefore(end));
+      }
+
+      bool matchesCategory = true;
+      if (_selectedCategory != null) {
+        matchesCategory = transaction.categoryName.toLowerCase() == _selectedCategory!.toLowerCase();
+      }
+
+      return matchesQuery && matchesType && matchesDate && matchesCategory;
     }).toList();
   }
 
-  Map<String, double> _calculateMonthlyTotals(List<Transaction> transactions) {
-    final now = DateTime.now();
-    final startOfMonth = DateTime(now.year, now.month, 1);
-    final monthlyTransactions = transactions
-        .where(
-          (t) => t.date.isAfter(startOfMonth.subtract(const Duration(days: 1))),
-        )
-        .toList();
+  Map<String, double> _calculateMonthlyTotals(
+    List<Transaction> transactions,
+    CurrencyProvider currencyProvider,
+  ) {
+    final targetCode = currencyProvider.currentCurrencyCode;
+    final filteredTransactions = transactions.where((t) {
+      bool matchesDate = true;
+      if (_startDate != null && _endDate != null) {
+        final trDate = DateTime(t.date.year, t.date.month, t.date.day);
+        final start = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+        final end = DateTime(_endDate!.year, _endDate!.month, _endDate!.day);
+        matchesDate = (trDate.isAtSameMomentAs(start) || trDate.isAfter(start)) &&
+            (trDate.isAtSameMomentAs(end) || trDate.isBefore(end));
+      } else {
+        final now = DateTime.now();
+        final startOfMonth = DateTime(now.year, now.month, 1);
+        matchesDate = t.date.isAfter(startOfMonth.subtract(const Duration(days: 1)));
+      }
 
-    final totalIncome = monthlyTransactions
-        .where((t) => t.isIncome)
-        .fold(0.0, (sum, t) => sum + t.amount);
+      bool matchesCategory = true;
+      if (_selectedCategory != null) {
+        matchesCategory = t.categoryName.toLowerCase() == _selectedCategory!.toLowerCase();
+      }
 
-    final totalExpense = monthlyTransactions
-        .where((t) => !t.isIncome)
-        .fold(0.0, (sum, t) => sum + t.amount);
+      return matchesDate && matchesCategory;
+    }).toList();
 
-    return {'income': totalIncome, 'expense': totalExpense};
+    double income = 0.0;
+    double expense = 0.0;
+
+    for (var t in filteredTransactions) {
+      final amount = currencyProvider.convertAmount(
+        t.amount,
+        t.currencyCode,
+        targetCode,
+      );
+
+      if (t.isIncome) {
+        income += amount;
+      } else {
+        expense += amount;
+      }
+    }
+
+    return {'income': income, 'expense': expense};
   }
 
   Map<String, List<Transaction>> _groupTransactionsByDate(
@@ -254,7 +423,6 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       margin: const EdgeInsets.all(16),
       child: Row(
         children: [
-          // Income Toggle
           Expanded(
             child: GestureDetector(
               onTap: () => _toggleFilter('Income'),
@@ -297,7 +465,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
-                            Icons.arrow_downward,
+                            Icons.arrow_upward,
                             size: 14,
                             color: AppTheme.incomeColor,
                           ),
@@ -344,7 +512,6 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          // Expense Toggle
           Expanded(
             child: GestureDetector(
               onTap: () => _toggleFilter('Expense'),
@@ -387,7 +554,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
-                            Icons.arrow_upward,
+                            Icons.arrow_downward,
                             size: 14,
                             color: AppTheme.expenseColor,
                           ),
@@ -439,39 +606,59 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   }
 
   Widget _buildTransactionsList(
-    Map<String, List<Transaction>> groupedTransactions,
+    List<Transaction> transactions,
     CurrencyProvider currencyProvider,
   ) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: groupedTransactions.keys.length,
-      itemBuilder: (context, index) {
-        final dateKey = groupedTransactions.keys.elementAt(index);
-        final dateTransactions = groupedTransactions[dateKey]!;
-        final date = DateTime.parse(dateKey);
+    if (transactions.isEmpty) {
+      return _buildEmptyState();
+    }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Date Header
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                DateFormat('dd/MM').format(date),
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 11,
-                  color: const Color(0xFF1A1A1A),
-                  fontWeight: FontWeight.w800,
-                ),
+    final groupedTransactions = _groupTransactionsByDate(transactions);
+    final sortedDates = groupedTransactions.keys.toList()
+      ..sort((a, b) => b.compareTo(a));
+
+    final List<dynamic> flattenedItems = [];
+    for (final date in sortedDates) {
+      flattenedItems.add(date); 
+      flattenedItems.addAll(groupedTransactions[date]!);
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 100),
+      itemCount: flattenedItems.length,
+      itemBuilder: (context, index) {
+        final item = flattenedItems[index];
+        if (item is String) {
+          final date = DateTime.parse(item);
+          final isToday = DateUtils.isSameDay(date, DateTime.now());
+          final isYesterday = DateUtils.isSameDay(
+            date,
+            DateTime.now().subtract(const Duration(days: 1)),
+          );
+
+          String dateLabel;
+          if (isToday) {
+            dateLabel = 'TODAY';
+          } else if (isYesterday) {
+            dateLabel = 'YESTERDAY';
+          } else {
+            dateLabel = DateFormat('EEE, MMM dd, yyyy').format(date).toUpperCase();
+          }
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+            child: Text(
+              dateLabel,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11,
+                color: const Color(0xFF1A1A1A),
+                fontWeight: FontWeight.w800,
               ),
             ),
-            // Transactions for this date
-            ...dateTransactions.map(
-              (transaction) =>
-                  _buildTransactionCard(transaction, currencyProvider),
-            ),
-          ],
-        );
+          );
+        } else {
+          return _buildTransactionCard(item as Transaction, currencyProvider);
+        }
       },
     );
   }
@@ -668,32 +855,42 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               fontWeight: FontWeight.w500,
             ),
           ),
-          trailing: RichText(
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: currencyProvider.currentCurrencySymbol,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: isExpense
-                        ? AppTheme.expenseColor
-                        : AppTheme.incomeColor,
+          trailing: (() {
+            // Convert the stored amount to the user's selected base currency
+            // before displaying. Without this conversion, a transaction stored
+            // as INR 5000 would appear as $5000 (wrong) when USD is selected.
+            final convertedAmount = currencyProvider.convertAmount(
+              transaction.amount.abs(),
+              transaction.currencyCode,
+              currencyProvider.currentCurrencyCode,
+            );
+            return RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: currencyProvider.currentCurrencySymbol,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isExpense
+                          ? AppTheme.expenseColor
+                          : AppTheme.incomeColor,
+                    ),
                   ),
-                ),
-                TextSpan(
-                  text: NumberFormat('#,##0').format(transaction.amount.abs()),
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13, // Standardized to match Dashboard
-                    fontWeight: FontWeight.w600,
-                    color: isExpense
-                        ? AppTheme.expenseColor
-                        : AppTheme.incomeColor,
+                  TextSpan(
+                    text: NumberFormat('#,##0').format(convertedAmount),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13, // Standardized to match Dashboard
+                      fontWeight: FontWeight.w600,
+                      color: isExpense
+                          ? AppTheme.expenseColor
+                          : AppTheme.incomeColor,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
+                ],
+              ),
+            );
+          }()),
         ),
       ),
     );

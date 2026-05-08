@@ -1,27 +1,33 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:finflow/utils/app_config.dart';
 
 class UserModel {
   final String uid;
   final String name;
   final String email;
-  final bool isPremium;
+  final bool _isPremium;
   final DateTime? premiumExpiry;
   final String? purchaseToken;
   final DateTime? premiumGrantedAt;
   final String? premiumSource;
   final String? productId;
+  final int smsTransactionCount;
+
+  /// Returns true if the user is a premium member or if testing mode is enabled.
+  bool get isPremium => _isPremium || AppConfig.isTestingMode;
 
   UserModel({
     required this.uid,
     required this.name,
     required this.email,
-    this.isPremium = false,
+    bool isPremium = false,
     this.premiumExpiry,
     this.purchaseToken,
     this.premiumGrantedAt,
     this.premiumSource,
     this.productId,
-  });
+    this.smsTransactionCount = 0,
+  }) : _isPremium = isPremium;
 
   factory UserModel.fromMap(Map<String, dynamic> map) {
     return UserModel(
@@ -40,6 +46,7 @@ class UserModel {
           : null,
       premiumSource: map['premiumSource'],
       productId: map['productId'],
+      smsTransactionCount: map['smsTransactionCount'] ?? 0,
     );
   }
 
@@ -61,6 +68,7 @@ class UserModel {
           : null,
       premiumSource: data?['premiumSource'],
       productId: data?['productId'],
+      smsTransactionCount: data?['smsTransactionCount'] ?? 0,
     );
   }
 
@@ -69,7 +77,8 @@ class UserModel {
       'uid': uid,
       'name': name,
       'email': email,
-      'isPremium': isPremium,
+      'isPremium': _isPremium,
+      'smsTransactionCount': smsTransactionCount,
       if (premiumExpiry != null)
         'premiumExpiry': premiumExpiry!.toIso8601String(),
       if (purchaseToken != null) 'purchaseToken': purchaseToken,
@@ -91,6 +100,30 @@ class UserModel {
     return premiumExpiry!.difference(DateTime.now()).inDays;
   }
 
+  /// Get remaining SMS transactions for free users
+  int get remainingSmsTransactions {
+    if (isPremiumActive) return -1; // Unlimited
+    return (15 - smsTransactionCount).clamp(0, 15);
+  }
+
+  /// Check if user has reached SMS limit
+  bool get hasReachedSmsLimit {
+    if (isPremiumActive) return false;
+    return smsTransactionCount >= 15;
+  }
+
+  /// Check if user can access AI insights
+  bool get canUseAiInsights => isPremiumActive;
+
+  /// Check if user can access advanced reports
+  bool get canUseAdvancedReports => isPremiumActive;
+
+  /// Check if user has secure backup
+  bool get hasSecureBackup => isPremiumActive;
+
+  /// Check if user should see ads
+  bool get shouldShowAds => !isPremiumActive;
+
   UserModel copyWith({
     String? uid,
     String? name,
@@ -101,17 +134,19 @@ class UserModel {
     DateTime? premiumGrantedAt,
     String? premiumSource,
     String? productId,
+    int? smsTransactionCount,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
       name: name ?? this.name,
       email: email ?? this.email,
-      isPremium: isPremium ?? this.isPremium,
+      isPremium: isPremium ?? _isPremium,
       premiumExpiry: premiumExpiry ?? this.premiumExpiry,
       purchaseToken: purchaseToken ?? this.purchaseToken,
       premiumGrantedAt: premiumGrantedAt ?? this.premiumGrantedAt,
       premiumSource: premiumSource ?? this.premiumSource,
       productId: productId ?? this.productId,
+      smsTransactionCount: smsTransactionCount ?? this.smsTransactionCount,
     );
   }
 }

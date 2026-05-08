@@ -7,11 +7,13 @@ import 'dart:io';
 import 'package:finflow/utils/database_helper.dart';
 import 'package:finflow/providers/transaction_provider.dart'
     show TransactionProvider, UserNotAuthenticatedException;
+import 'package:finflow/providers/category_provider.dart';
 import 'package:finflow/providers/theme_provider.dart';
 import 'package:finflow/providers/currency_provider.dart';
 import 'package:finflow/utils/app_theme.dart';
 import 'package:finflow/models/transaction.dart';
 import 'package:uuid/uuid.dart';
+import 'package:finflow/utils/debug_logger.dart';
 
 class AddTransactionScreen extends StatefulWidget {
   final Map<String, dynamic>? transactionToEdit;
@@ -46,9 +48,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
 
   void _populateEditData() {
     final data = widget.transactionToEdit!;
-    _amountController.text = data['amount'].toString();
+    _amountController.text = data['amount']?.toString() ?? '0';
     _descController.text = data['note'] ?? '';
-    _selectedDate = DateTime.parse(data['date']);
+    final dateStr = data['date'];
+    if (dateStr != null) {
+      _selectedDate = DateTime.tryParse(dateStr.toString()) ?? DateTime.now();
+    }
     _selectedCategory = data['category'];
     _isRecurring = data['is_recurring'] == 1;
     if (data.containsKey('type')) {
@@ -57,27 +62,40 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   }
 
   Future<void> _loadCategories() async {
-    final type = _transactionType == 'Transfer'
-        ? 'Expense'
-        : _transactionType; // Treat Transfer like Expense for categories
-    final data = await DatabaseHelper.instance.getCategoriesByType(type);
+    try {
+      final type = _transactionType == 'Transfer'
+          ? 'expense'
+          : _transactionType.toLowerCase();
+          
+      final categoryProvider = Provider.of<CategoryProvider>(context, listen: false);
+      final data = categoryProvider.categories.where((c) => c.type.toLowerCase() == type).toList();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      _categories = data;
-      // Take first 7 categories for display, add "More" as 8th
-      _displayCategories = data.take(7).toList();
-      if (_selectedCategory != null) {
-        final matchingCategory = _categories.firstWhere(
-          (c) => c['name'].toLowerCase() == _selectedCategory!.toLowerCase(),
-          orElse: () => {},
-        );
-        _selectedCategory = matchingCategory.isNotEmpty
-            ? matchingCategory['name']
-            : null;
-      }
-    });
+      setState(() {
+        _categories = data.map((c) => {
+          'name': c.name,
+          'type': c.type,
+          'icon': c.icon,
+          'color': c.color,
+          'budget_limit': c.budgetLimit,
+        }).toList();
+        
+        // Take first 7 categories for display, add "More" as 8th
+        _displayCategories = _categories.take(7).toList();
+        if (_selectedCategory != null) {
+          final matchingCategory = _categories.firstWhere(
+            (c) => c['name']?.toString().toLowerCase() == _selectedCategory!.toLowerCase(),
+            orElse: () => {},
+          );
+          _selectedCategory = matchingCategory.isNotEmpty
+              ? matchingCategory['name']
+              : null;
+        }
+      });
+    } catch (e) {
+      logError('Error loading categories', error: e);
+    }
   }
 
   void _setTransactionType(String type) {
@@ -185,14 +203,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
             width: 60,
             height: 60,
             decoration: BoxDecoration(
-              color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+              color: (_transactionType == 'Expense' ? AppTheme.expenseColor : AppTheme.incomeColor).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: const Color(0xFF0D9488).withValues(alpha: 0.2),
+                color: (_transactionType == 'Expense' ? AppTheme.expenseColor : AppTheme.incomeColor).withValues(alpha: 0.2),
                 width: 1,
               ),
             ),
-            child: Icon(icon, color: const Color(0xFF0D9488), size: 28),
+            child: Icon(icon, color: _transactionType == 'Expense' ? AppTheme.expenseColor : AppTheme.incomeColor, size: 28),
           ),
           const SizedBox(height: 8),
           Text(
@@ -286,6 +304,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     final TextEditingController categoryNameController =
         TextEditingController();
     IconData selectedIcon = Icons.category;
+    bool isCategorySaving = false;
     final isDarkMode = Provider.of<ThemeProvider>(
       context,
       listen: false,
@@ -442,78 +461,99 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   const SizedBox(width: 16),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () async {
-                        final name = categoryNameController.text.trim();
-                        if (name.isEmpty) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Please enter a category name'),
-                                backgroundColor: AppTheme.expenseColor,
-                              ),
-                            );
-                          }
-                          return;
-                        }
+                      onPressed: isCategorySaving
+                          ? null
+                          : () async {
+                              final name = categoryNameController.text.trim();
+                              if (name.isEmpty) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content:
+                                          Text('Please enter a category name'),
+                                      backgroundColor: AppTheme.expenseColor,
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
 
-                        try {
-                          await DatabaseHelper.instance.insertCategory({
-                            'name': name,
-                            'type': _transactionType == 'Transfer'
-                                ? 'Expense'
-                                : _transactionType,
-                            'icon': selectedIcon.codePoint.toString(),
-                            'color': AppTheme.getCategoryColor(
-                              name,
-                            ).toARGB32().toString(),
-                            'budget_limit': 0.0,
-                          });
-                          if (!mounted) return;
+                              try {
+                                setState(() => isCategorySaving = true);
+                                await DatabaseHelper.instance.insertCategory({
+                                  'name': name,
+                                  'type': _transactionType == 'Transfer'
+                                      ? 'Expense'
+                                      : _transactionType,
+                                  'icon': selectedIcon.codePoint.toString(),
+                                  'color': AppTheme.getCategoryColor(
+                                    name,
+                                  ).toARGB32().toString(),
+                                  'budget_limit': 0.0,
+                                });
+                                if (!mounted) return;
 
-                          // Refresh categories
-                          await _loadCategories();
-                          if (!mounted) return;
-                          setState(() => _selectedCategory = name);
+                                // Refresh categories
+                                await _loadCategories();
+                                if (!mounted) return;
+                                // Use the outer class setState for _selectedCategory
+                                this.setState(() => _selectedCategory = name);
 
-                          if (!mounted) return;
-                          // ignore: use_build_context_synchronously
-                          Navigator.pop(context);
-                          // ignore: use_build_context_synchronously
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Category "$name" created successfully',
-                              ),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        } catch (e) {
-                          if (mounted) {
-                            // ignore: use_build_context_synchronously
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Error creating category: $e'),
-                                backgroundColor: AppTheme.expenseColor,
-                              ),
-                            );
-                          }
-                        }
-                      },
+                                if (!mounted) return;
+                                // ignore: use_build_context_synchronously
+                                Navigator.pop(context);
+                                // ignore: use_build_context_synchronously
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Category "$name" created successfully',
+                                    ),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              } catch (e) {
+                                if (mounted) {
+                                  // ignore: use_build_context_synchronously
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content:
+                                          Text('Error creating category: $e'),
+                                      backgroundColor: AppTheme.expenseColor,
+                                    ),
+                                  );
+                                }
+                              } finally {
+                                if (mounted) {
+                                  setState(() => isCategorySaving = false);
+                                }
+                              }
+                            },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0D9488),
+                        backgroundColor: _transactionType == 'Expense'
+                            ? AppTheme.expenseColor
+                            : AppTheme.incomeColor,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: Text(
-                        'Create',
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      child: isCategorySaving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(
+                              'Create',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                     ),
                   ),
                 ],
@@ -796,8 +836,14 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       setState(() => _isSaving = false);
       return;
     }
+    final currentSelectedCategory = _selectedCategory;
+    if (currentSelectedCategory == null) {
+      setState(() => _isSaving = false);
+      return;
+    }
+
     final matchingCategory = allCategories.firstWhere(
-      (c) => c['name'].toLowerCase() == _selectedCategory!.toLowerCase(),
+      (c) => c['name']?.toString().toLowerCase() == currentSelectedCategory.toLowerCase(),
       orElse: () => {'id': 0},
     );
 
@@ -1088,7 +1134,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                                   ),
                                   decoration: BoxDecoration(
                                     color: _transactionType == 'Expense'
-                                        ? const Color(0xFF0D9488)
+                                        ? AppTheme.expenseColor // Red for Expense
                                         : Colors.transparent,
                                     borderRadius: BorderRadius.circular(20),
                                   ),
@@ -1134,7 +1180,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                                   ),
                                   decoration: BoxDecoration(
                                     color: _transactionType == 'Income'
-                                        ? const Color(0xFF0D9488)
+                                        ? AppTheme.incomeColor // Green for Income
                                         : Colors.transparent,
                                     borderRadius: BorderRadius.circular(20),
                                   ),
@@ -1196,7 +1242,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                                 icon: const Icon(Icons.add, size: 20),
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
-                                color: const Color(0xFF0D9488),
+                                color: _transactionType == 'Expense' ? AppTheme.expenseColor : AppTheme.incomeColor,
                               ),
                               const SizedBox(width: 8),
                               GestureDetector(
@@ -1206,7 +1252,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF0D9488),
+                                    color: _transactionType == 'Expense' ? AppTheme.expenseColor : AppTheme.incomeColor,
                                   ),
                                 ),
                               ),
@@ -1215,44 +1261,51 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      GridView.builder(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 4,
-                              mainAxisSpacing: 16,
-                              crossAxisSpacing: 16,
-                              childAspectRatio: 0.8,
+                      _categories.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(20.0),
+                                child: CircularProgressIndicator(),
+                              ),
+                            )
+                          : GridView.builder(
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 4,
+                                mainAxisSpacing: 16,
+                                crossAxisSpacing: 16,
+                                childAspectRatio: 0.8,
+                              ),
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount:
+                                  _displayCategories.length + 1, // +1 for "More"
+                              itemBuilder: (context, index) {
+                                if (index == _displayCategories.length) {
+                                  // "More" button
+                                  return _buildCategoryItem(
+                                    'More',
+                                    Icons.add,
+                                    const Color(0xFF6B7280),
+                                    isMore: true,
+                                  );
+                                }
+
+                                final category = _displayCategories[index];
+                                final categoryColor = AppTheme.getCategoryColor(
+                                  category['name'],
+                                );
+                                final categoryIcon = AppTheme.getCategoryIcon(
+                                  category['name'],
+                                );
+
+                                return _buildCategoryItem(
+                                  category['name'],
+                                  categoryIcon,
+                                  categoryColor,
+                                );
+                              },
                             ),
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount:
-                            _displayCategories.length + 1, // +1 for "More"
-                        itemBuilder: (context, index) {
-                          if (index == _displayCategories.length) {
-                            // "More" button
-                            return _buildCategoryItem(
-                              'More',
-                              Icons.add,
-                              const Color(0xFF6B7280),
-                              isMore: true,
-                            );
-                          }
-
-                          final category = _displayCategories[index];
-                          final categoryColor = AppTheme.getCategoryColor(
-                            category['name'],
-                          );
-                          final categoryIcon = AppTheme.getCategoryIcon(
-                            category['name'],
-                          );
-
-                          return _buildCategoryItem(
-                            category['name'],
-                            categoryIcon,
-                            categoryColor,
-                          );
-                        },
-                      ),
                       const SizedBox(height: 16),
 
                       // Fields
@@ -1385,12 +1438,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                                           border: InputBorder.none,
                                           contentPadding: EdgeInsets.zero,
                                         ),
-                                        validator: (value) {
-                                          if (value == null || value.isEmpty) {
-                                            return 'Please enter a description';
-                                          }
-                                          return null;
-                                        },
+                                        validator: (value) => null,
                                       ),
                                     ],
                                   ),
@@ -1511,22 +1559,27 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                         child: ElevatedButton(
                           onPressed: _isSaving ? null : _saveTransaction,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0D9488),
+                            backgroundColor: _transactionType == 'Expense'
+                                ? AppTheme.expenseColor
+                                : AppTheme.incomeColor,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
-                            shadowColor: const Color(
-                              0xFF0D9488,
-                            ).withValues(alpha: 0.2),
+                            shadowColor: (_transactionType == 'Expense'
+                                ? AppTheme.expenseColor
+                                : AppTheme.incomeColor).withValues(alpha: 0.2),
                             elevation: 8,
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(
-                                'Save Transaction',
+                              if (_isSaving)
+                                const CircularProgressIndicator(color: Colors.white)
+                              else
+                                Text(
+                                  'Save Transaction',
                                 style: GoogleFonts.inter(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
@@ -1572,7 +1625,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
                 color: isSelected
-                    ? const Color(0xFF0D9488)
+                    ? (_transactionType == 'Expense'
+                        ? AppTheme.expenseColor
+                        : AppTheme.incomeColor)
                     : Colors.transparent,
                 width: 2,
               ),
@@ -1586,7 +1641,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               fontSize: 11,
               fontWeight: FontWeight.w500,
               color: isSelected
-                  ? const Color(0xFF0D9488)
+                  ? (_transactionType == 'Expense'
+                      ? AppTheme.expenseColor
+                      : AppTheme.incomeColor)
                   : (isDarkMode
                         ? AppTheme.textSecondaryDark
                         : AppTheme.textSecondaryLight),

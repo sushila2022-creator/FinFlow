@@ -30,15 +30,18 @@ class AuthService {
         credential,
       );
 
-      await _saveUserToFirestore(
-        uid: userCredential.user!.uid,
-        email: googleUser.email,
-        name: googleUser.displayName ?? 'Google User',
-        photoUrl: googleUser.photoUrl,
-        provider: 'google',
-      );
+      final user = userCredential.user;
+      if (user != null) {
+        await _saveUserToFirestore(
+          uid: user.uid,
+          email: googleUser.email,
+          name: googleUser.displayName ?? 'Google User',
+          photoUrl: googleUser.photoUrl,
+          provider: 'google',
+        );
+        logDebug('Google sign-in successful: ${user.email}');
+      }
 
-      logDebug('Google sign-in successful: ${userCredential.user?.email}');
       return userCredential;
     } catch (e) {
       logError('Google sign-in failed', error: e);
@@ -64,18 +67,21 @@ class AuthService {
         oauthCredential,
       );
 
-      await _saveUserToFirestore(
-        uid: userCredential.user!.uid,
-        email: appleCredential.email ?? '',
-        name:
-            appleCredential.givenName != null &&
-                appleCredential.familyName != null
-            ? '${appleCredential.givenName} ${appleCredential.familyName}'
-            : 'Apple User',
-        provider: 'apple',
-      );
+      final user = userCredential.user;
+      if (user != null) {
+        await _saveUserToFirestore(
+          uid: user.uid,
+          email: appleCredential.email ?? '',
+          name:
+              appleCredential.givenName != null &&
+                  appleCredential.familyName != null
+              ? '${appleCredential.givenName} ${appleCredential.familyName}'
+              : 'Apple User',
+          provider: 'apple',
+        );
+        logDebug('Apple sign-in successful: ${user.email}');
+      }
 
-      logDebug('Apple sign-in successful: ${userCredential.user?.email}');
       return userCredential;
     } catch (e) {
       logError('Apple sign-in failed', error: e);

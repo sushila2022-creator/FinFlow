@@ -1,5 +1,5 @@
 class Category {
-  int? id;
+  dynamic id;
   String name;
   String icon;
   String color;
